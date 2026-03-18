@@ -1,8 +1,8 @@
 # 🛡️ Pipeline Governance Compliance Agent
 
-**A GenAI-powered proof-of-concept that reads inline Azure DevOps pipeline YAML, identifies governance violations, and auto-generates a compliant CI/CD template hierarchy — automating what took 8 months to do manually.**
+**An agentic AI proof-of-concept that reads inline Azure DevOps pipeline YAML, identifies governance violations, and auto-generates a compliant CI/CD template hierarchy with self-validation and iterative correction — automating what took 8 months to do manually.**
 
-> CSC3101 Capstone Project Extension — SIT-University of Glasgow  
+> CSC3101 Capstone Project Extension — SIT-University of Glasgow
 > Jiang Weimin
 
 🔗 **Live Demo:** [coe-compliance-agent.streamlit.app](https://coe-compliance-agent.streamlit.app)
@@ -34,15 +34,38 @@ This PoC validates the **Chapter 6.5 future work recommendation**: *"AIOps / Age
 
 The agent takes raw inline Azure DevOps pipeline YAML (the "before" state) and produces:
 
-```
-INPUT                          PROCESS                              OUTPUT
-─────                          ───────                              ──────
-Inline pipeline YAML    →   1. Tool Detection (LLM call #1)    →   Compliance report (violations + severity)
-(e.g., 104-line              2. Hierarchy Generation (LLM #2)       Consuming pipeline YAML (the template reference)
- Mend SCA config)            3. Self-Validation (LLM #3)            Full 5-layer template hierarchy:
-                             4. Self-Correction (if needed)           Stage → Job → Orchestrator Task → Scripts
-                                                                    9-section README per template
-                                                                    Configuration reduction percentage
+```mermaid
+flowchart LR
+    subgraph INPUT
+        A["Inline Pipeline YAML\n(e.g., 104-line Mend SCA config)"]
+    end
+
+    subgraph PROCESS["AGENTIC PROCESS"]
+        B["1. Tool Detection\n(LLM Call #1)"]
+        C["2. Hierarchy Generation\n(LLM Call #2)"]
+        D["3. Self-Validation\n(LLM Call #3)"]
+        E{"Score ≥ 90%?"}
+        F["4. Self-Correction\n(up to 3 retries)"]
+        B --> C --> D --> E
+        E -- No --> F --> C
+    end
+
+    subgraph OUTPUT
+        G["✅ Compliance Report"]
+        H["📄 Consuming Pipeline"]
+        I["📦 5-Layer Hierarchy"]
+        J["📖 3× READMEs"]
+        K["🤖 Agent Trace"]
+    end
+
+    A --> B
+    E -- Yes --> G & H & I & J & K
+
+    style INPUT fill:#1e293b,color:#f8fafc,stroke:#334155
+    style PROCESS fill:#0f172a,color:#f8fafc,stroke:#334155
+    style OUTPUT fill:#1e293b,color:#f8fafc,stroke:#334155
+    style E fill:#d97706,color:#fff,stroke:#b45309
+    style F fill:#dc2626,color:#fff,stroke:#b91c1c
 ```
 
 ### Example: Mend SCA Migration
@@ -52,12 +75,14 @@ Inline pipeline YAML    →   1. Tool Detection (LLM call #1)    →   Complianc
 - Manual WhiteSource Unified Agent download + config file
 - Inline report parsing, artifact staging, policy enforcement
 - No SBOM generation, no reachability analysis
+- **Compliance score: ~5%**
 
 **After (17 lines template reference):**
 - Credentials from Key Vault via variable groups
 - Single template call to `mend_sca_orchestrator_task.yaml`
 - Automatic PDF report, SBOM (CycloneDX/SPDX), reachability analysis
 - Three-step deferred enforcement: scan → publish → check
+- **Compliance score: 95–100%**
 
 **Result: 83% configuration reduction (DS-01)**
 
@@ -65,89 +90,87 @@ Inline pipeline YAML    →   1. Tool Detection (LLM call #1)    →   Complianc
 
 ## How It Is Agentic
 
-This is not a single LLM prompt-and-response. The agent demonstrates autonomous decision-making through a multi-step execution loop:
+This is not a single LLM prompt-and-response. The agent demonstrates autonomous decision-making through a multi-step execution loop with self-validation and iterative correction:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    AGENTIC EXECUTION LOOP                    │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Step 1: TOOL DETECTION (LLM Call #1)                       │
-│  ├── Agent autonomously classifies the input YAML            │
-│  ├── Decides: Mend SCA? SAST? Container? SonarQube? Other?  │
-│  └── Selects tool-specific parameter set (no cross-mixing)   │
-│                                                              │
-│  Step 2: HIERARCHY GENERATION (LLM Call #2)                  │
-│  ├── Generates full 5-layer hierarchy + scripts + READMEs    │
-│  └── Applies governance rules, data masking, naming conventions│
-│                                                              │
-│  Step 3: SELF-VALIDATION (LLM Call #3)                       │
-│  ├── Second LLM call audits the generated output             │
-│  ├── Checks 9 governance criteria:                           │
-│  │   ├── compliant_yaml populated?                           │
-│  │   ├── All hierarchy levels present?                       │
-│  │   ├── Scripts use correct structure?                      │
-│  │   ├── No sensitive data leaks?                            │
-│  │   ├── READMEs complete?                                   │
-│  │   ├── No cross-tool parameter contamination?              │
-│  │   └── Reduction calculated correctly?                     │
-│  └── Returns pass/fail + specific issues                     │
-│                                                              │
-│  Step 4: SELF-CORRECTION (conditional, up to 2 retries)      │
-│  ├── If validation fails: feeds issues back to generator     │
-│  ├── Agent regenerates with fix instructions                 │
-│  └── Re-validates until pass or max retries                  │
-│                                                              │
-│  Step 5: MULTI-FILE ANALYSIS (optional)                      │
-│  ├── Splits input by '---' separator                         │
-│  ├── Auto-detects tool for each block independently          │
-│  └── Processes each with full agentic loop                   │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["📥 Inline YAML Input"] --> B["🔍 Step 1: Tool Detection\n(LLM Call #1)"]
+    B --> |"Mend SCA / SAST / Container\nSonarQube / Fortify / Unknown"| C["⚙️ Step 2: Hierarchy Generation\n(LLM Call #2)"]
+    C --> D["🔎 Step 3: Self-Validation\n(LLM Call #3)\n9 structural checks"]
+    D --> E{"Step 4: Score Check\nscore = 100 − (issues × 12)\n≥ 90%?"}
+    E -- "✅ Pass\n0-1 issues" --> G["📤 Output Delivered\n+ Agent Trace"]
+    E -- "❌ Fail" --> F["🔄 Step 5: Self-Correction\nFeed issues back\n+ fix instructions"]
+    F --> |"Retry (max 3)"| C
+
+    H["📁 Multi-File Mode\n(optional)"] -.-> |"Split by ---\nAuto-detect each"| B
+
+    style A fill:#1e40af,color:#fff,stroke:#1e3a5f
+    style B fill:#7c3aed,color:#fff,stroke:#6d28d9
+    style C fill:#2563eb,color:#fff,stroke:#1d4ed8
+    style D fill:#059669,color:#fff,stroke:#047857
+    style E fill:#d97706,color:#fff,stroke:#b45309
+    style F fill:#dc2626,color:#fff,stroke:#b91c1c
+    style G fill:#16a34a,color:#fff,stroke:#15803d
+    style H fill:#475569,color:#fff,stroke:#334155
 ```
 
-The **Agent Trace** tab in the UI shows the full execution trace: which tool was detected, how many attempts were needed, what validation issues were found and corrected.
+**Example self-correction progression:**
+
+| Attempt | Issues Found | Computed Score | Result |
+|---|---|---|---|
+| 1 | 6 issues | 28% | ❌ Self-correct |
+| 2 | 3 issues | 64% | ❌ Self-correct |
+| 3 | 1 issue | 88% | ❌ Self-correct |
+| 4 | 0 issues | 100% | ✅ Pass |
+
+The **Agent Trace** tab in the UI shows the full execution trace: which tool was detected, compliance score per attempt, what issues were found, and how they were corrected.
 
 ---
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                    USER (Browser)                         │
-│          Streamlit UI (app.py)                           │
-│  ┌─────────────┐  ┌──────────────────────────────────┐  │
-│  │ Input Panel  │  │ Output Panel                     │  │
-│  │ - Paste YAML │  │ - Violations    - Template Files │  │
-│  │ - Examples   │  │ - Consuming     - READMEs        │  │
-│  │ - Multi-file │  │   Pipeline      - Agent Trace    │  │
-│  └──────┬──────┘  └──────────────────▲───────────────┘  │
-│         │                            │                   │
-└─────────┼────────────────────────────┼───────────────────┘
-          │                            │
-          ▼                            │
-┌──────────────────────────────────────┴───────────────────┐
-│                 AGENT CORE (agent.py)                     │
-│                                                           │
-│  detect_tool()          → LLM Call #1 (classification)    │
-│  analyse_pipeline()     → LLM Call #2 (generation)        │
-│  _validate_output()     → LLM Call #3 (validation)        │
-│  [retry if failed]      → LLM Call #4 (self-correction)   │
-│  analyse_multiple()     → orchestrates multi-file mode    │
-│                                                           │
-│  System Prompt: 8 governance rules, tool-specific params, │
-│  script structure standards, data masking rules,          │
-│  README format (9 sections), naming conventions           │
-│                                                           │
-└──────────────────────────┬───────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────┐
-│              AZURE OPENAI (GPT-4o)                        │
-│              Sweden Central region                         │
-│              Standard S0 tier                              │
-│              ~$0.025 per analysis call                     │
-└──────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph UI["🖥️ Streamlit UI (app.py)"]
+        direction LR
+        IN["Input Panel\n• Paste YAML\n• 5 Examples\n• Multi-file toggle"]
+        OUT["Output Panel (6 tabs)\n• Violations\n• Consuming Pipeline\n• Template Hierarchy\n• READMEs (×3)\n• Agent Trace\n• Raw JSON"]
+    end
+
+    subgraph AGENT["🧠 Agent Core (agent.py)"]
+        direction TB
+        DT["detect_tool()\nLLM Call #1"]
+        AP["analyse_pipeline()\nLLM Call #2"]
+        VO["_validate_output()\nLLM Call #3"]
+        SC["Score Threshold\n≥ 90%"]
+        RC["Self-Correction\n× 3 retries"]
+        MF["analyse_multiple()\nMulti-file orchestrator"]
+        DT --> AP --> VO --> SC
+        SC -. fail .-> RC -. retry .-> AP
+    end
+
+    subgraph LLM["☁️ Azure OpenAI"]
+        GPT["GPT-4o\nStandard S0\n~$0.025/call"]
+    end
+
+    subgraph SP["📋 System Prompt (~250 lines)"]
+        direction LR
+        R1["8 Governance Rules"]
+        R2["Tool-Specific Params"]
+        R3["Script Standards"]
+        R4["Data Masking Rules"]
+        R5["9-Section README Format"]
+    end
+
+    IN --> AGENT
+    AGENT --> OUT
+    AGENT <--> LLM
+    SP -.-> AGENT
+
+    style UI fill:#0f172a,color:#f8fafc,stroke:#334155
+    style AGENT fill:#1e293b,color:#f8fafc,stroke:#334155
+    style LLM fill:#7c3aed,color:#fff,stroke:#6d28d9
+    style SP fill:#1e3a5f,color:#f8fafc,stroke:#334155
 ```
 
 ---
@@ -157,12 +180,28 @@ The **Agent Trace** tab in the UI shows the full execution trace: which tool was
 | Component | Technology | Purpose |
 |---|---|---|
 | **LLM** | Azure OpenAI GPT-4o | YAML analysis, hierarchy generation, validation |
-| **Backend** | Python 3.12 | Agent core, API orchestration |
-| **Frontend** | Streamlit | Interactive web UI for demo |
-| **Hosting** | Streamlit Community Cloud | Free deployment with GitHub integration |
+| **Backend** | Python 3.12 | Agent core, API orchestration, agentic loop |
+| **Frontend** | Streamlit | Interactive web UI with 6-tab results display |
+| **Hosting** | Streamlit Community Cloud | Free deployment with GitHub auto-deploy |
 | **Secrets** | Streamlit Secrets + python-dotenv | API key management (cloud + local) |
 | **CI/CD Platform** (capstone) | Azure DevOps | Where the actual CoE templates run |
 | **Security Tools** (capstone) | SonarQube, Mend CLI, BuildKit, GitVersion | What the templates integrate |
+
+---
+
+## Demo Examples
+
+The app includes 5 pre-loaded examples:
+
+| Example | Tool | Lines (Before → After) | Expected Reduction |
+|---|---|---|---|
+| Mend SCA (104 lines) | Mend SCA | 104 → 17 | ~83% |
+| SonarQube CLI (20 lines) | SonarQube | 20 → 10 | ~50% |
+| Mend SAST (148 lines) | Mend SAST | 148 → 19 | ~87% |
+| Container Scanning (175 lines) | Container | 175 → 24 | ~86% |
+| Multi-Tool (3 files) | SonarQube + SAST + Container | 3 separate analyses | Varies |
+
+The **Multi-Tool** example demonstrates autonomous tool detection — the agent receives 3 YAML blocks separated by `---` and independently classifies and processes each one.
 
 ---
 
@@ -170,40 +209,51 @@ The **Agent Trace** tab in the UI shows the full execution trace: which tool was
 
 ```
 coe-compliance-agent/
-├── agent.py            # Agent core — system prompt, agentic loop, tool detection,
-│                       #   self-validation, multi-file analysis
-├── app.py              # Streamlit UI — input panel, results tabs (violations,
-│                       #   consuming pipeline, hierarchy, READMEs, agent trace)
+├── agent.py            # Agent core — agentic loop, tool detection, self-validation,
+│                       #   score threshold check, multi-file analysis
+├── app.py              # Streamlit UI — input panel, 6 results tabs
 ├── requirements.txt    # Python dependencies
-├── test_connection.py  # Azure OpenAI connection test (development only)
-├── .env                # Local secrets (not committed — see .gitignore)
 ├── .gitignore          # Excludes .env, venv/, __pycache__/
 └── README.md           # This file
 ```
 
 ### `agent.py` — Agent Core
 
-The brain of the system. Contains:
+The brain of the system. Key components:
 
 - **`get_secret()`** — reads from Streamlit secrets (cloud) or `.env` (local), enabling the same code to run in both environments
-- **`SYSTEM_PROMPT`** — ~250 lines encoding all 8 CoE governance rules, tool-specific parameter sets, script structure standards, naming conventions, data masking rules, README format, and output JSON schema
-- **`detect_tool()`** — fast LLM call that classifies input YAML into one of: Mend SCA, Mend SAST, Container Scanning, SonarQube, Fortify, or Unknown
-- **`analyse_pipeline()`** — the main agentic loop: detect → generate → validate → correct (up to 2 retries)
-- **`_validate_output()`** — second LLM call that audits the generated output against 9 governance checks
-- **`analyse_multiple()`** — splits multi-file input and processes each independently
+- **`SYSTEM_PROMPT`** — ~250 lines encoding all 8 CoE governance rules, tool-specific parameter sets, script structure standards (Constants → Derived values → Logging helpers → Functions → Main), naming conventions, data masking rules, 9-section README format, and output JSON schema
+- **`VALIDATION_PROMPT`** — auditor prompt that checks generated output against 9 structural criteria
+- **`DETECTION_PROMPT`** — fast classifier for tool type (Mend SCA, SAST, Container, SonarQube, Fortify, Unknown)
+- **`detect_tool()`** — LLM call #1: autonomous tool classification
+- **`analyse_pipeline()`** — the main agentic loop:
+  1. Detect tool type
+  2. Generate compliant hierarchy
+  3. Self-validate (structural + 9-section checks)
+  4. Compute real compliance score from validator issues (`100 - issues × 12`)
+  5. If score < 90% or structural issues found → feed issues back → retry (up to 3×)
+- **`_validate_output()`** — LLM call #3: audits generated output, returns pass/fail + specific issues
+- **`analyse_multiple()`** — splits multi-file input by `---`, processes each with full agentic loop
 
 ### `app.py` — Streamlit UI
 
 The presentation layer. Features:
 
-- **Sidebar:** example loader (4 pre-built inline YAMLs), multi-file toggle, hierarchy diagram
-- **Input panel:** YAML text area with syntax highlighting
+- **Sidebar:** 5 example loader (4 single-tool + 1 multi-tool), multi-file toggle (auto-enables for Multi-Tool), hierarchy diagram
+- **Input panel:** YAML text area
+- **Metrics row (5 cards):**
+  - Tool Detected
+  - Compliance Before (red/amber/green colour-coded)
+  - Compliance After (green if ≥90%)
+  - Lines Before → After
+  - Config Reduction %
+- **Configuration Reduction bar** — colour-coded (green ≥70%, amber ≥40%, red <40%)
 - **Output tabs:**
   - 🚨 **Violations** — governance violations with severity badges (CRITICAL/HIGH/MEDIUM/LOW)
   - ✅ **Consuming Pipeline** — the template reference YAML that replaces the inline config
-  - 📦 **Template Hierarchy** — full 5-layer output: Stage → Job → Task → Scripts, with call chain arrows
-  - 📖 **READMEs** — 9-section documentation per template (Overview, Prerequisites, Parameters, Flow, Output, Variables, Secrets, Usage, Error Handling)
-  - 🤖 **Agent Trace** — agentic execution log showing tool detection, validation attempts, self-correction history
+  - 📦 **Template Hierarchy** — full 5-layer output: Stage → Job → Task → Scripts, with call chain arrows and colour-coded hierarchy badges
+  - 📖 **READMEs** — 3 READMEs (stage, job, task) each with 9 sections (Overview, Prerequisites, Parameters, Flow, Output, Variables, Secrets, Usage Examples, Error Handling)
+  - 🤖 **Agent Trace** — agentic execution log: tool detected, attempts count, self-validated status, compliance score per attempt, issues found per attempt, agent decision flow
   - 🔧 **Raw JSON** — complete agent response for debugging
 
 ---
@@ -213,13 +263,37 @@ The presentation layer. Features:
 | # | Rule | What It Enforces |
 |---|---|---|
 | 1 | Template Distribution | All scanning via shared `resources: repositories` — no inline configs |
-| 2 | Parameter Naming | Standardised names (`userKey`, `email`, `apiKey`, `enableFailPolicy`, etc.) |
-| 3 | Template Hierarchy | 5-layer: Pipelines → Stages → Jobs → Tasks → Scripts |
-| 4 | Script Architecture | Three-step deferred enforcement: scan → publish → check. Exit code 9 = policy violation |
+| 2 | Parameter Naming | Standardised tool-specific names (`userKey`, `email`, `apiKey`, `enableFailPolicy`, etc.) — no cross-tool contamination |
+| 3 | Template Hierarchy | 5-layer: Pipelines → Stages → Jobs → Tasks → Scripts. Naming: `technology_verb_{scope}_type.yaml` |
+| 4 | Script Architecture | Three-step deferred enforcement: scan → publish (continueOnError) → check. Exit code 9 = policy violation. Scripts follow: Constants → Derived values → Logging helpers → Functions → Main |
 | 5 | Default-Secure | `enableFailPolicy: true` by default — must explicitly opt out |
-| 6 | Credential Management | All secrets from Azure Key Vault via Library variable groups |
-| 7 | Documentation Standard | 9-section README per template with parameter tables and flow diagrams |
+| 6 | Credential Management | All secrets from Azure Key Vault via Library variable groups — no hardcoded credentials |
+| 7 | Documentation Standard | 9-section README per template (Overview, Prerequisites, Parameters, Flow, Output, Variables, Secrets, Usage, Error Handling) |
 | 8 | Artefact Publishing | SCA: PDF + SBOM + reachability. SAST: JSON + HTML. Container: JSON + SARIF + SPDX + CycloneDX |
+
+---
+
+## Agentic Validation Criteria
+
+The self-validation LLM call checks these 9 structural criteria:
+
+1. `compliant_yaml` is populated and contains `resources: repositories`
+2. `template_files` contains stage, job, task, and script entries
+3. Orchestrator task calls scripts via `- bash:` steps (not `- template:`)
+4. Scripts follow structure: Constants → Derived values → Logging helpers → Functions → Main
+5. Scripts use `#!/bin/bash` and `set -euo pipefail`
+6. No sensitive identifiers leak (no real org names, internal prefixes, credential variable names)
+7. `readme_files` has 3 entries (stage, job, task) each with non-empty content
+8. Parameters are tool-specific — no cross-contamination
+9. `reduction_percentage` calculation is correct
+
+The compliance score is **computed from the validator**, not self-reported by the generation model:
+
+```
+compliance_score_after = 100 - (number_of_issues × 12)
+```
+
+This prevents the model from inflating its own score. The threshold to pass is **≥ 90%** (0–1 issues).
 
 ---
 
@@ -228,7 +302,7 @@ The presentation layer. Features:
 ```
 openai          # Azure OpenAI Python SDK
 streamlit       # Web UI framework
-pyyaml          # YAML parsing (for future enhancements)
+pyyaml          # YAML parsing
 python-dotenv   # Local .env file loading
 ```
 
@@ -267,7 +341,7 @@ streamlit run app.py
 
 ### 3. Streamlit Cloud Deployment
 
-1. Push code to GitHub (private repo)
+1. Push code to GitHub (private or public repo)
 2. Go to [share.streamlit.io](https://share.streamlit.io)
 3. Connect your repo, set `app.py` as main file
 4. Add secrets in Settings → Secrets (TOML format):
@@ -284,10 +358,11 @@ AZURE_OPENAI_API_VERSION = "2024-12-01-preview"
 
 | Component | Cost |
 |---|---|
-| Azure OpenAI GPT-4o | ~$0.025 per analysis (2K input + 1K output tokens) |
+| Azure OpenAI GPT-4o | ~$0.025 per single analysis (~$0.10 with validation retries) |
 | Streamlit Community Cloud | Free |
-| 200 test/demo calls | ~$5 |
-| **Total PoC budget** | **< $10 out of $100 student credits** |
+| Multi-tool analysis (3 files) | ~$0.30 per run |
+| 200 test/demo calls | ~$10–20 |
+| **Total PoC budget** | **< $20 out of $100 student credits** |
 
 ---
 
@@ -297,7 +372,7 @@ This PoC is Phase 1 of the agentic AI vision. The roadmap:
 
 | Phase | Capability | Status |
 |---|---|---|
-| Phase 1 (current) | GenAI compliance analysis with self-validation | ✅ Complete |
+| Phase 1 (current) | GenAI compliance analysis with agentic self-validation loop | ✅ Complete |
 | Phase 2 | Azure DevOps API integration — agent reads repos directly | Planned |
 | Phase 3 | Autonomous PR generation — agent creates PRs with compliant YAML | Planned |
 | Phase 4 | Continuous monitoring — agent runs on every PR as a pipeline extension | Planned |

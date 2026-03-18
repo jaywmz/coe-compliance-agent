@@ -49,14 +49,19 @@ def render_readme(content):
 def display_single_result(result):
     """Display analysis results for a single pipeline."""
     tool = result.get("tool_detected", "?")
-    score = result.get("compliance_score", 0)
+    score_before = result.get("compliance_score_before", result.get("compliance_score", 0))
+    score_after = result.get("compliance_score_after", 100)
     orig = result.get("original_line_count", "?")
     comp = result.get("compliant_line_count", "?")
     reduction = result.get("reduction_percentage", 0)
 
-    st.markdown(f"""<div class="metric-grid">
+    before_color = "#dc2626" if float(score_before) < 40 else "#d97706" if float(score_before) < 70 else "#16a34a"
+    after_color = "#16a34a" if float(score_after) >= 90 else "#d97706"
+
+    st.markdown(f"""<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.8rem;margin-bottom:1rem;">
         <div class="metric-card"><div class="metric-value">{tool}</div><div class="metric-label">Tool Detected</div></div>
-        <div class="metric-card"><div class="metric-value">{score}%</div><div class="metric-label">Compliance Score</div></div>
+        <div class="metric-card"><div class="metric-value" style="color:{before_color}">{score_before}%</div><div class="metric-label">Compliance (Before)</div></div>
+        <div class="metric-card"><div class="metric-value" style="color:{after_color}">{score_after}%</div><div class="metric-label">Compliance (After)</div></div>
         <div class="metric-card"><div class="metric-value">{orig} → {comp}</div><div class="metric-label">Lines Before → After</div></div>
         <div class="metric-card"><div class="metric-value">{reduction}%</div><div class="metric-label">Config Reduction</div></div>
     </div>""", unsafe_allow_html=True)
@@ -149,10 +154,14 @@ def display_single_result(result):
                 attempt_num = log_entry.get("attempt", "?")
                 is_valid = log_entry.get("valid", None)
                 issues = log_entry.get("issues", [])
+                score_after = log_entry.get("score_after", "?")
+                score_pass = log_entry.get("score_pass", None)
+
                 if is_valid is True:
-                    st.success(f"Attempt {attempt_num}: Passed all validation checks")
+                    st.success(f"Attempt {attempt_num}: ✅ Passed — compliance score: {score_after}%")
                 elif is_valid is False:
-                    with st.expander(f"Attempt {attempt_num}: Failed — {len(issues)} issue(s) → agent self-corrected"):
+                    label = f"Attempt {attempt_num}: ❌ Failed — score: {score_after}%, {len(issues)} issue(s) → agent self-corrected"
+                    with st.expander(label):
                         for issue in issues:
                             st.markdown(f"- {issue}")
                 else:
@@ -161,12 +170,12 @@ def display_single_result(result):
             st.markdown("---")
             st.markdown("**Agent Decision Flow**")
             flow = f"1. Tool Detection → {meta.get('detected_tool', '?')}\n"
-            flow += f"2. Generate compliant hierarchy (attempt 1)\n"
-            flow += f"3. Self-validate against 9 governance checks\n"
+            flow += f"2. Generate compliant hierarchy\n"
+            flow += f"3. Self-validate (structure + compliance score ≥ 90%)\n"
             if meta.get("self_validated"):
-                flow += f"4. Validation passed → output delivered"
+                flow += f"4. Validation passed in {meta.get('attempts', '?')} attempt(s) → output delivered"
             else:
-                flow += f"4. Fix issues → regenerate (up to {meta.get('attempts', '?')} attempts)\n5. Best-effort output delivered"
+                flow += f"4. Retried {meta.get('attempts', '?')} times → best-effort output delivered"
             st.code(flow, language=None)
         else:
             st.info("No agent metadata available.")

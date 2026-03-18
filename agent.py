@@ -215,7 +215,8 @@ stages:
   "tool_detected": "...",
   "scanner_mode": "...",
   "violations": [{ "rule":"...", "severity":"...", "description":"...", "evidence":"...", "remediation":"..." }],
-  "compliance_score": 0-100,
+  "compliance_score_before": 0-100,
+  "compliance_score_after": 0-100,
   "original_line_count": <int>,
   "compliant_line_count": <int>,
   "reduction_percentage": <float>,
@@ -239,6 +240,8 @@ stages:
 CRITICAL:
 - NEVER cross-contaminate tool parameters.
 - compliant_yaml MUST be populated.
+- compliance_score_before = how compliant the INPUT yaml is (0 = fully non-compliant, 100 = already compliant). Score against all 8 rules.
+- compliance_score_after = how compliant the GENERATED output is (should be 90-100 after applying CoE templates). Score the compliant_yaml + template_files against all 8 rules.
 - Orchestrator script count is tool-dependent: Mend SCA/SAST = 3 (scan, publish, check). Container = 4 (build, scan, publish, check). SonarQube = 0 (built-in tasks only).
 - readme_files MUST have 3 entries (stage, job, task) each with full 9-section content. Empty content = WRONG.
 - Keep scripts 30-50 lines. Keep READMEs concise but complete. Budget your tokens wisely.
@@ -333,13 +336,14 @@ def _validate_output(result: dict) -> dict:
         return {"valid": True, "issues": [], "fix_instructions": ""}
 
 
-def analyse_pipeline(inline_yaml: str, max_retries: int = 2) -> dict:
+def analyse_pipeline(inline_yaml: str, max_retries: int = 3) -> dict:
     """
     Agentic analysis loop:
     1. Detect tool type
     2. Generate compliant hierarchy
     3. Self-validate output
-    4. If validation fails, retry with fix instructions (up to max_retries)
+    4. Check compliance_score_after >= 90
+    5. If validation fails OR score too low, retry with fix instructions
     """
     client, deployment = _get_client()
 
@@ -378,14 +382,28 @@ def analyse_pipeline(inline_yaml: str, max_retries: int = 2) -> dict:
 
         # Step 3: Self-validation
         validation = _validate_output(result)
+
+        # Step 4: Compliance score threshold check
+        score_after = result.get("compliance_score_after", result.get("compliance_score", 0))
+        score_pass = float(score_after) >= 90
+        struct_pass = validation.get("valid", False)
+
+        issues = validation.get("issues", [])
+        if not score_pass:
+            issues.append(f"compliance_score_after is {score_after}% — must be >= 90%. Ensure all generated templates, scripts, and READMEs fully comply with all 8 governance rules.")
+
+        all_pass = struct_pass and score_pass
+
         validation_log.append({
             "attempt": attempt,
-            "valid": validation.get("valid", False),
-            "issues": validation.get("issues", []),
+            "valid": all_pass,
+            "structural_valid": struct_pass,
+            "score_after": score_after,
+            "score_pass": score_pass,
+            "issues": issues,
         })
 
-        if validation.get("valid", False):
-            # Passed validation — enrich with agent metadata
+        if all_pass:
             result["agent_metadata"] = {
                 "detected_tool": detected_tool,
                 "attempts": attempt,
@@ -394,14 +412,15 @@ def analyse_pipeline(inline_yaml: str, max_retries: int = 2) -> dict:
             }
             return result
 
-        # Step 4: Self-correction — feed fix instructions back
+        # Step 5: Self-correction
         if attempt <= max_retries:
-            fix = validation.get("fix_instructions", "Fix the issues found.")
-            issues = validation.get("issues", [])
-            correction_msg = f"Validation failed. Issues found:\n"
+            fix = validation.get("fix_instructions", "")
+            correction_msg = f"Validation failed (attempt {attempt}). Issues:\n"
             for i, issue in enumerate(issues, 1):
                 correction_msg += f"{i}. {issue}\n"
-            correction_msg += f"\nFix instructions: {fix}\n\nRegenerate the complete JSON output with these fixes applied."
+            if fix:
+                correction_msg += f"\nFix instructions: {fix}"
+            correction_msg += f"\n\nRegenerate the complete JSON. compliance_score_after MUST be >= 90."
 
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": correction_msg})

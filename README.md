@@ -1,8 +1,8 @@
 # 🛡️ Pipeline Governance Compliance Agent
 
-**An agentic AI proof-of-concept that reads inline Azure DevOps pipeline YAML, identifies governance violations, and auto-generates a compliant CI/CD template hierarchy with self-validation and iterative correction — automating what took 8 months to do manually.**
+**An agentic AI proof-of-concept that reads inline Azure DevOps pipeline YAML, identifies governance violations, and auto-generates a compliant CI/CD template hierarchy with self-validation and iterative correction - automating what took 8 months to do manually.**
 
-> CSC3101 Capstone Project Extension — SIT-University of Glasgow
+> CSC3101 Capstone Project Extension - SIT-University of Glasgow
 > Jiang Weimin
 
 🔗 **Live Demo:** [coe-compliance-agent.streamlit.app](https://coe-compliance-agent.streamlit.app)
@@ -22,11 +22,11 @@ This PoC extends the **"Centralised CI/CD CoE Template Framework for DevSecOps G
 
 | # | Sub-Problem | What This PoC Demonstrates |
 |---|---|---|
-| SP1 | **Configuration Duplication** across ~55 repos | The agent reproduces the same 30–87% reduction achieved manually — proving the governance rules are machine-enforceable |
+| SP1 | **Configuration Duplication** across ~55 repos | The agent reproduces the same 30–87% reduction achieved manually - proving the governance rules are machine-enforceable |
 | SP2 | **Absence of Governance** for pipeline organisation, naming, documentation | The agent generates compliant templates, scripts, and 9-section READMEs following the exact CoE documentation standard |
-| SP3 | **Incomplete Security Integration** — SAST and container scanning were absent | The agent handles all 4 tool types (SonarQube, Mend SCA, Mend SAST, Container) and can generalise to unknown tools (e.g., Fortify) |
+| SP3 | **Incomplete Security Integration** - SAST and container scanning were absent | The agent handles all 4 tool types (SonarQube, Mend SCA, Mend SAST, Container) and can generalise to unknown tools (e.g., Fortify) |
 
-This PoC validates the **Chapter 6.5 future work recommendation**: *"AIOps / Agentic AI — AI agent reads repo pipelines, auto-generates CoE-compliant templates following governance standards."*
+This PoC validates the **Chapter 6.5 future work recommendation**: *"AIOps / Agentic AI - AI agent reads repo pipelines, auto-generates CoE-compliant templates following governance standards."*
 
 ---
 
@@ -41,9 +41,9 @@ flowchart LR
     end
 
     subgraph PROCESS["AGENTIC PROCESS"]
-        B["1. Tool Detection\n(Regex — instant)"]
-        C["2. Hierarchy Generation\n(LLM Call — GPT-4o)"]
-        D["3. Code-Based Validation\n(9 checks — instant)"]
+        B["1. Tool Detection\n(Regex - instant)"]
+        C["2. Hierarchy Generation\n(LLM Call - GPT-4o)"]
+        D["3. Code-Based Validation\n(9 checks - instant)"]
         E{"Score ≥ 90%?"}
         F["4. Self-Correction\n(up to 3 retries)"]
         B --> C --> D --> E
@@ -90,12 +90,12 @@ flowchart LR
 
 ## How It Is Agentic
 
-This is not a single LLM prompt-and-response. The agent uses a **hybrid architecture**: fast code-based checks for deterministic validation (tool detection via regex, structural validation via Python) combined with LLM for creative generation (hierarchy, scripts, READMEs). This gives the best of both worlds — speed + reliability for validation, creativity for generation.
+This is not a single LLM prompt-and-response. The agent uses a **hybrid architecture**: fast code-based checks for deterministic validation (tool detection via regex, structural validation via Python) combined with LLM for creative generation (hierarchy, scripts, READMEs). This gives the best of both worlds - speed + reliability for validation, creativity for generation.
 
 ```mermaid
 flowchart TD
-    A["📥 Inline YAML Input"] --> B["🔍 Step 1: Tool Detection\n(Regex-based — instant)"]
-    B --> |"Mend SCA / SAST / Container\nSonarQube / Fortify / Unknown"| C["⚙️ Step 2: Hierarchy Generation\n(LLM Call — GPT-4o)"]
+    A["📥 Inline YAML Input"] --> B["🔍 Step 1: Tool Detection\n(Regex-based - instant)"]
+    B --> |"Mend SCA / SAST / Container\nSonarQube / Fortify / Unknown"| C["⚙️ Step 2: Hierarchy Generation\n(LLM Call - GPT-4o)"]
     C --> D["🔎 Step 3: Code-Based Validation\n9 structural checks (instant)"]
     D --> E{"Step 4: Score Check\nscore = 100 − (issues × 12)\n≥ 90%?"}
     E -- "✅ Pass\n0-1 issues" --> G["📤 Output Delivered\n+ Agent Trace"]
@@ -201,7 +201,7 @@ The app includes 5 pre-loaded examples:
 | Container Scanning (175 lines) | Container | 175 → 24 | ~86% |
 | Multi-Tool (3 files) | SonarQube + SAST + Container | 3 separate analyses | Varies |
 
-The **Multi-Tool** example demonstrates autonomous tool detection — the agent receives 3 YAML blocks separated by `---` and independently classifies and processes each one.
+The **Multi-Tool** example demonstrates autonomous tool detection - the agent receives 3 YAML blocks separated by `---` and independently classifies and processes each one.
 
 ---
 
@@ -209,33 +209,33 @@ The **Multi-Tool** example demonstrates autonomous tool detection — the agent 
 
 ```
 coe-compliance-agent/
-├── agent.py            # Agent core — agentic loop, tool detection, self-validation,
+├── agent.py            # Agent core - agentic loop, tool detection, self-validation,
 │                       #   score threshold check, multi-file analysis
-├── app.py              # Streamlit UI — input panel, 6 results tabs
+├── app.py              # Streamlit UI - input panel, 6 results tabs
 ├── requirements.txt    # Python dependencies
 ├── .gitignore          # Excludes .env, venv/, __pycache__/
 └── README.md           # This file
 ```
 
-### `agent.py` — Agent Core
+### `agent.py` - Agent Core
 
 The brain of the system. Key components:
 
-- **`get_secret()`** — reads from Streamlit secrets (cloud) or `.env` (local), enabling the same code to run in both environments
-- **`SYSTEM_PROMPT`** — ~250 lines encoding all 8 CoE governance rules, tool-specific parameter sets, script structure standards (Constants → Derived values → Logging helpers → Functions → Main), naming conventions, data masking rules, 9-section README format, and output JSON schema
-- **`VALIDATION_PROMPT`** — auditor prompt that checks generated output against 9 structural criteria
-- **`DETECTION_PROMPT`** — fast classifier for tool type (Mend SCA, SAST, Container, SonarQube, Fortify, Unknown)
-- **`detect_tool()`** — regex-based tool classification (instant, no LLM call): matches keywords to identify Mend SCA, SAST, Container, SonarQube, Fortify, or Unknown
-- **`analyse_pipeline()`** — the main agentic loop:
-  1. Detect tool type (regex — instant)
-  2. Generate compliant hierarchy (LLM call — GPT-4o)
-  3. Validate output (code-based — 9 structural checks, instant)
+- **`get_secret()`** - reads from Streamlit secrets (cloud) or `.env` (local), enabling the same code to run in both environments
+- **`SYSTEM_PROMPT`** - ~250 lines encoding all 8 CoE governance rules, tool-specific parameter sets, script structure standards (Constants → Derived values → Logging helpers → Functions → Main), naming conventions, data masking rules, 9-section README format, and output JSON schema
+- **`VALIDATION_PROMPT`** - auditor prompt that checks generated output against 9 structural criteria
+- **`DETECTION_PROMPT`** - fast classifier for tool type (Mend SCA, SAST, Container, SonarQube, Fortify, Unknown)
+- **`detect_tool()`** - regex-based tool classification (instant, no LLM call): matches keywords to identify Mend SCA, SAST, Container, SonarQube, Fortify, or Unknown
+- **`analyse_pipeline()`** - the main agentic loop:
+  1. Detect tool type (regex - instant)
+  2. Generate compliant hierarchy (LLM call - GPT-4o)
+  3. Validate output (code-based - 9 structural checks, instant)
   4. Compute compliance score from issues (`100 - issues × 12`)
   5. If score < 90% or structural issues found → feed issues back → retry (up to 3×)
-- **`_validate_output()`** — code-based validation (instant, no LLM call): checks compliant_yaml populated, all hierarchy levels present, bash steps in orchestrator, script structure, no sensitive data leaks, READMEs complete, no parameter cross-contamination, reduction calculation correct
-- **`analyse_multiple()`** — splits multi-file input by `---`, processes each with full agentic loop
+- **`_validate_output()`** - code-based validation (instant, no LLM call): checks compliant_yaml populated, all hierarchy levels present, bash steps in orchestrator, script structure, no sensitive data leaks, READMEs complete, no parameter cross-contamination, reduction calculation correct
+- **`analyse_multiple()`** - splits multi-file input by `---`, processes each with full agentic loop
 
-### `app.py` — Streamlit UI
+### `app.py` - Streamlit UI
 
 The presentation layer. Features:
 
@@ -247,14 +247,14 @@ The presentation layer. Features:
   - Compliance After (green if ≥90%)
   - Lines Before → After
   - Config Reduction %
-- **Configuration Reduction bar** — colour-coded (green ≥70%, amber ≥40%, red <40%)
+- **Configuration Reduction bar** - colour-coded (green ≥70%, amber ≥40%, red <40%)
 - **Output tabs:**
-  - 🚨 **Violations** — governance violations with severity badges (CRITICAL/HIGH/MEDIUM/LOW)
-  - ✅ **Consuming Pipeline** — the template reference YAML that replaces the inline config
-  - 📦 **Template Hierarchy** — full 5-layer output: Stage → Job → Task → Scripts, with call chain arrows and colour-coded hierarchy badges
-  - 📖 **READMEs** — 3 READMEs (stage, job, task) each with 9 sections (Overview, Prerequisites, Parameters, Flow, Output, Variables, Secrets, Usage Examples, Error Handling)
-  - 🤖 **Agent Trace** — agentic execution log: tool detected, attempts count, self-validated status, compliance score per attempt, issues found per attempt, agent decision flow
-  - 🔧 **Raw JSON** — complete agent response for debugging
+  - 🚨 **Violations** - governance violations with severity badges (CRITICAL/HIGH/MEDIUM/LOW)
+  - ✅ **Consuming Pipeline** - the template reference YAML that replaces the inline config
+  - 📦 **Template Hierarchy** - full 5-layer output: Stage → Job → Task → Scripts, with call chain arrows and colour-coded hierarchy badges
+  - 📖 **READMEs** - 3 READMEs (stage, job, task) each with 9 sections (Overview, Prerequisites, Parameters, Flow, Output, Variables, Secrets, Usage Examples, Error Handling)
+  - 🤖 **Agent Trace** - agentic execution log: tool detected, attempts count, self-validated status, compliance score per attempt, issues found per attempt, agent decision flow
+  - 🔧 **Raw JSON** - complete agent response for debugging
 
 ---
 
@@ -262,12 +262,12 @@ The presentation layer. Features:
 
 | # | Rule | What It Enforces |
 |---|---|---|
-| 1 | Template Distribution | All scanning via shared `resources: repositories` — no inline configs |
-| 2 | Parameter Naming | Standardised tool-specific names (`userKey`, `email`, `apiKey`, `enableFailPolicy`, etc.) — no cross-tool contamination |
+| 1 | Template Distribution | All scanning via shared `resources: repositories` - no inline configs |
+| 2 | Parameter Naming | Standardised tool-specific names (`userKey`, `email`, `apiKey`, `enableFailPolicy`, etc.) - no cross-tool contamination |
 | 3 | Template Hierarchy | 5-layer: Pipelines → Stages → Jobs → Tasks → Scripts. Naming: `technology_verb_{scope}_type.yaml` |
 | 4 | Script Architecture | Three-step deferred enforcement: scan → publish (continueOnError) → check. Exit code 9 = policy violation. Scripts follow: Constants → Derived values → Logging helpers → Functions → Main |
-| 5 | Default-Secure | `enableFailPolicy: true` by default — must explicitly opt out |
-| 6 | Credential Management | All secrets from Azure Key Vault via Library variable groups — no hardcoded credentials |
+| 5 | Default-Secure | `enableFailPolicy: true` by default - must explicitly opt out |
+| 6 | Credential Management | All secrets from Azure Key Vault via Library variable groups - no hardcoded credentials |
 | 7 | Documentation Standard | 9-section README per template (Overview, Prerequisites, Parameters, Flow, Output, Variables, Secrets, Usage, Error Handling) |
 | 8 | Artefact Publishing | SCA: PDF + SBOM + reachability. SAST: JSON + HTML. Container: JSON + SARIF + SPDX + CycloneDX |
 
@@ -275,7 +275,7 @@ The presentation layer. Features:
 
 ## Agentic Validation Criteria
 
-The validation is **code-based** (Python, not LLM) — this ensures deterministic, consistent, and instant checks with no LLM variance:
+The validation is **code-based** (Python, not LLM) - this ensures deterministic, consistent, and instant checks with no LLM variance:
 
 1. `compliant_yaml` is populated and contains `resources: repositories`
 2. `template_files` contains stage, job, task, and script entries
@@ -284,7 +284,7 @@ The validation is **code-based** (Python, not LLM) — this ensures deterministi
 5. Scripts use `#!/bin/bash` and `set -euo pipefail`
 6. No sensitive identifiers leak (no real org names, internal prefixes, credential variable names)
 7. `readme_files` has 3 entries (stage, job, task) each with non-empty content
-8. Parameters are tool-specific — no cross-contamination
+8. Parameters are tool-specific - no cross-contamination
 9. `reduction_percentage` calculation is correct
 
 The compliance score is **computed from the validator**, not self-reported by the generation model:
@@ -374,17 +374,17 @@ This PoC is Phase 1 of the agentic AI vision. The roadmap:
 | Phase | Capability | Status |
 |---|---|---|
 | Phase 1 (current) | GenAI compliance analysis with agentic self-validation loop | ✅ Complete |
-| Phase 2 | Azure DevOps API integration — agent reads repos directly | Planned |
-| Phase 3 | Autonomous PR generation — agent creates PRs with compliant YAML | Planned |
-| Phase 4 | Continuous monitoring — agent runs on every PR as a pipeline extension | Planned |
+| Phase 2 | Azure DevOps API integration - agent reads repos directly | Planned |
+| Phase 3 | Autonomous PR generation - agent creates PRs with compliant YAML | Planned |
+| Phase 4 | Continuous monitoring - agent runs on every PR as a pipeline extension | Planned |
 
 ---
 
 ## Acknowledgements
 
-- **Industry Supervisor** — [Organisation] Cloud Services & Support
-- **Academic Supervisor** — University of Glasgow
-- **CloudOps Team** — Template testing and adoption feedback
+- **Industry Supervisor** - [Organisation] Cloud Services & Support
+- **Academic Supervisor** - University of Glasgow
+- **CloudOps Team** - Template testing and adoption feedback
 
 ---
 

@@ -195,6 +195,7 @@ with st.sidebar:
     st.markdown("### 🛡️ CoE Compliance Agent")
     st.caption("Pipeline Governance PoC")
     st.caption("CSC3101 Capstone - Jiang Weimin")
+    st.markdown("[![GitHub](https://img.shields.io/badge/GitHub-Repo-181717?logo=github)](https://github.com/jaywmz/coe-compliance-agent)")
     st.markdown("---")
     st.markdown("##### About")
     st.markdown("AI agent that reads inline Azure DevOps pipeline YAML, identifies governance violations, and generates the full 5-layer template hierarchy with documentation.")

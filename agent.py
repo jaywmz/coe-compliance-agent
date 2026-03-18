@@ -358,6 +358,8 @@ def analyse_pipeline(inline_yaml: str, max_retries: int = 3) -> dict:
 
     attempt = 0
     validation_log = []
+    best_result = None
+    best_score = -1
 
     while attempt <= max_retries:
         attempt += 1
@@ -375,8 +377,10 @@ def analyse_pipeline(inline_yaml: str, max_retries: int = 3) -> dict:
         except json.JSONDecodeError:
             validation_log.append({"attempt": attempt, "error": "JSON parse failed"})
             if attempt <= max_retries:
-                messages.append({"role": "assistant", "content": raw})
-                messages.append({"role": "user", "content": "Your response was not valid JSON. Return ONLY a JSON object, no markdown fences or preamble."})
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Analyse this inline pipeline YAML for governance compliance. Your previous response was not valid JSON. Return ONLY a JSON object.\n\n```yaml\n{inline_yaml}\n```"},
+                ]
                 continue
             return {"error": "Failed to parse agent response as JSON after retries.", "raw_response": raw, "validation_log": validation_log}
 
@@ -395,6 +399,11 @@ def analyse_pipeline(inline_yaml: str, max_retries: int = 3) -> dict:
         score_after = result["compliance_score_after"]
         score_pass = float(score_after) >= 90
         all_pass = struct_pass and score_pass
+
+        # Track the best result across all attempts
+        if float(score_after) > best_score:
+            best_score = float(score_after)
+            best_result = result.copy()
 
         if not score_pass and struct_pass:
             issues.append(f"Validator-adjusted compliance score is {score_after}% — must be >= 90%.")
@@ -418,27 +427,32 @@ def analyse_pipeline(inline_yaml: str, max_retries: int = 3) -> dict:
             }
             return result
 
-        # Step 5: Self-correction
+        # Step 5: Self-correction — rebuild fresh messages with fix instructions
         if attempt <= max_retries:
             fix = validation.get("fix_instructions", "")
-            correction_msg = f"Validation failed (attempt {attempt}). Issues:\n"
+            correction_msg = f"Previous attempt failed validation. Fix these specific issues:\n"
             for i, issue in enumerate(issues, 1):
                 correction_msg += f"{i}. {issue}\n"
             if fix:
-                correction_msg += f"\nFix instructions: {fix}"
+                correction_msg += f"\n{fix}"
             correction_msg += f"\n\nRegenerate the complete JSON. compliance_score_after MUST be >= 90."
 
-            messages.append({"role": "assistant", "content": raw})
-            messages.append({"role": "user", "content": correction_msg})
+            # Reset messages — fresh context with fix instructions baked in
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Analyse this inline pipeline YAML for governance compliance. IMPORTANT — a previous generation attempt failed validation. Apply these fixes:\n\n{correction_msg}\n\nOriginal YAML:\n\n```yaml\n{inline_yaml}\n```"},
+            ]
 
-    # Exhausted retries — return best effort with validation log
-    result["agent_metadata"] = {
+    # Exhausted retries — return BEST attempt (not last, which may be worse)
+    final = best_result if best_result is not None else result
+    final["agent_metadata"] = {
         "detected_tool": detected_tool,
         "attempts": attempt,
         "validation_log": validation_log,
         "self_validated": False,
+        "best_score": best_score,
     }
-    return result
+    return final
 
 
 def analyse_multiple(yaml_blocks: list) -> list:

@@ -142,7 +142,7 @@ ALL output MUST mask sensitive/internal identifiers using bracketed placeholders
 - Organisation names: `[Organisation]`, `[Project]`, `[Pipeline Templates Repository]`
 - Variable group names: `[Variable Group - Tools]`, `[Variable Group - Secrets]`
 - Credential variable names: `$([Mend-User-Key])`, `$([Mend-Email])`, `$([Mend-API-Key])`, `$([Mend-Product-Token])`
-- Product prefixes: `[ProductPrefix]` (not WDS, AZDO, etc.)
+- Product prefixes: `[ProductPrefix]` (never use real internal prefixes)
 - Service connections: `[SonarQube-Service-Connection]`
 - URLs: `[Mend-Platform-URL]`
 - Any internal system names, team names, or repository-specific identifiers
@@ -259,7 +259,7 @@ Validate the output against these checks:
 3. The orchestrator task (hierarchy_level=task) calls scripts via `- bash:` steps (NOT `- template:`)
 4. Scripts follow the structure: Constants → Derived values → Logging helpers → Functions → Main
 5. Scripts use `#!/bin/bash` and `set -euo pipefail`
-6. No sensitive identifiers leak (no WDS, AZDO, WHITESOURCE, DevOpsToolsController, DevOpsVariable, etc.)
+6. No sensitive identifiers leak (no real organisation names, internal product prefixes, real variable group names, or real credential variable names)
 7. readme_files has 3 entries (stage, job, task) each with non-empty content
 8. Parameters are tool-specific — no cross-contamination (e.g., no sonarQubeServiceConnection in Mend output)
 9. reduction_percentage matches: ((original_line_count - compliant_line_count) / original_line_count) * 100

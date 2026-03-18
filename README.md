@@ -3,7 +3,7 @@
 **A GenAI-powered proof-of-concept that reads inline Azure DevOps pipeline YAML, identifies governance violations, and auto-generates a compliant CI/CD template hierarchy — automating what took 8 months to do manually.**
 
 > CSC3101 Capstone Project Extension — SIT-University of Glasgow  
-> Jiang Weimin (2301083) | Central Provident Fund Board (CPFB)
+> Jiang Weimin
 
 🔗 **Live Demo:** [coe-compliance-agent.streamlit.app](https://coe-compliance-agent.streamlit.app)
 
@@ -11,7 +11,7 @@
 
 ## Capstone Context
 
-This PoC extends the **"Centralised CI/CD CoE Template Framework for DevSecOps Governance at CPFB"** capstone project. Over an 8-month industry placement, the capstone delivered a centralised, parameterised YAML template framework on Azure DevOps (GCC 2.0) that:
+This PoC extends the **"Centralised CI/CD CoE Template Framework for DevSecOps Governance"** capstone project. Over an 8-month industry placement at a government statutory board, the capstone delivered a centralised, parameterised YAML template framework on Azure DevOps that:
 
 - Migrated ~55 application repositories from fragmented inline pipeline configurations to a reusable 5-layer template hierarchy (Pipelines → Stages → Jobs → Tasks → Scripts)
 - Integrated 4 security tools: **SonarQube**, **Mend CLI** (SCA, SAST, Container Scanning), **BuildKit**, and **GitVersion**
@@ -161,7 +161,7 @@ The **Agent Trace** tab in the UI shows the full execution trace: which tool was
 | **Frontend** | Streamlit | Interactive web UI for demo |
 | **Hosting** | Streamlit Community Cloud | Free deployment with GitHub integration |
 | **Secrets** | Streamlit Secrets + python-dotenv | API key management (cloud + local) |
-| **CI/CD Platform** (capstone) | Azure DevOps (GCC 2.0) | Where the actual CoE templates run |
+| **CI/CD Platform** (capstone) | Azure DevOps | Where the actual CoE templates run |
 | **Security Tools** (capstone) | SonarQube, Mend CLI, BuildKit, GitVersion | What the templates integrate |
 
 ---
@@ -306,9 +306,9 @@ This PoC is Phase 1 of the agentic AI vision. The roadmap:
 
 ## Acknowledgements
 
-- **Mr. Soh Lam Soon** — Industry Supervisor, CPFB
-- **A/Prof. Bogdan Cautis** — Academic Supervisor, University of Glasgow
-- **CPFB Cloud Services & Support Team** — Template testing and adoption feedback
+- **Industry Supervisor** — [Organisation] Cloud Services & Support
+- **Academic Supervisor** — University of Glasgow
+- **CloudOps Team** — Template testing and adoption feedback
 
 ---
 

@@ -10,6 +10,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ---------------------------------------------------------------------------
+# Lazy client — created on first use, not at import time
+# ---------------------------------------------------------------------------
+_client = None
+_deployment = None
+
 
 def get_secret(key, default=None):
     """Read from Streamlit secrets first, then fall back to env vars."""
@@ -19,13 +25,17 @@ def get_secret(key, default=None):
         return os.getenv(key, default)
 
 
-client = AzureOpenAI(
-    api_key=get_secret("AZURE_OPENAI_API_KEY"),
-    api_version=get_secret("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
-    azure_endpoint=get_secret("AZURE_OPENAI_ENDPOINT"),
-)
+def _get_client():
+    global _client, _deployment
+    if _client is None:
+        _client = AzureOpenAI(
+            api_key=get_secret("AZURE_OPENAI_API_KEY"),
+            api_version=get_secret("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
+            azure_endpoint=get_secret("AZURE_OPENAI_ENDPOINT"),
+        )
+        _deployment = get_secret("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+    return _client, _deployment
 
-DEPLOYMENT = get_secret("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 
 SYSTEM_PROMPT = r"""
 You are the **Pipeline Governance Compliance Agent** for a CI/CD CoE on Azure DevOps.
@@ -239,8 +249,9 @@ CRITICAL:
 
 
 def analyse_pipeline(inline_yaml: str) -> dict:
+    client, deployment = _get_client()
     response = client.chat.completions.create(
-        model=DEPLOYMENT,
+        model=deployment,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"Analyse this inline pipeline YAML for governance compliance:\n\n```yaml\n{inline_yaml}\n```"},

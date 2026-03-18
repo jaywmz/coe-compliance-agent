@@ -134,12 +134,15 @@ def display_single_result(result):
             st.markdown("**Agentic Execution Trace**")
             a1, a2, a3 = st.columns(3)
             with a1:
-                st.metric("Tool Detected", meta.get("detected_tool", "N/A"))
+                st.markdown(f"**Tool Detected**")
+                st.markdown(f"`{meta.get('detected_tool', 'N/A')}`")
             with a2:
-                st.metric("Attempts", meta.get("attempts", "N/A"))
+                st.markdown(f"**Attempts**")
+                st.markdown(f"`{meta.get('attempts', 'N/A')}`")
             with a3:
                 validated = meta.get("self_validated", False)
-                st.metric("Self-Validated", "✅ Pass" if validated else "⚠️ Best Effort")
+                st.markdown(f"**Self-Validated**")
+                st.markdown("✅ Passed" if validated else "⚠️ Best Effort")
 
             st.markdown("**Validation Loop**")
             for log_entry in meta.get("validation_log", []):

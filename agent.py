@@ -247,30 +247,189 @@ CRITICAL:
 - Return ONLY JSON.
 """.strip()
 
+# ---------------------------------------------------------------------------
+# Validation prompt — second LLM call to verify generated output
+# ---------------------------------------------------------------------------
+VALIDATION_PROMPT = r"""
+You are a CI/CD governance auditor. You will receive a JSON object containing generated pipeline templates, scripts, and READMEs.
 
-def analyse_pipeline(inline_yaml: str) -> dict:
-    client, deployment = _get_client()
-    response = client.chat.completions.create(
-        model=deployment,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Analyse this inline pipeline YAML for governance compliance:\n\n```yaml\n{inline_yaml}\n```"},
-        ],
-        max_tokens=16384,
-        temperature=0.1,
-    )
+Validate the output against these checks:
+1. compliant_yaml is NOT empty and contains `resources: repositories` block
+2. template_files contains stage, job, task, and script entries
+3. The orchestrator task (hierarchy_level=task) calls scripts via `- bash:` steps (NOT `- template:`)
+4. Scripts follow the structure: Constants → Derived values → Logging helpers → Functions → Main
+5. Scripts use `#!/bin/bash` and `set -euo pipefail`
+6. No sensitive identifiers leak (no WDS, AZDO, WHITESOURCE, DevOpsToolsController, DevOpsVariable, etc.)
+7. readme_files has 3 entries (stage, job, task) each with non-empty content
+8. Parameters are tool-specific — no cross-contamination (e.g., no sonarQubeServiceConnection in Mend output)
+9. reduction_percentage matches: ((original_line_count - compliant_line_count) / original_line_count) * 100
 
-    raw = response.choices[0].message.content.strip()
+Respond ONLY with this JSON:
+{
+  "valid": true/false,
+  "issues": ["issue 1", "issue 2"],
+  "fix_instructions": "Concise instructions for what to fix (empty string if valid)"
+}
+""".strip()
+
+# ---------------------------------------------------------------------------
+# Tool detection prompt — classifies YAML before analysis
+# ---------------------------------------------------------------------------
+DETECTION_PROMPT = r"""
+You are a CI/CD tool classifier. Given inline Azure DevOps pipeline YAML, identify which security tool it implements.
+
+Respond ONLY with one of these exact strings:
+- "Mend SCA" (if you see: WhiteSource, wss-unified-agent, mend dep, Mend SCA, dependency scanning)
+- "Mend SAST" (if you see: mend sast, SAST scanning, static analysis via Mend)
+- "Container Scanning" (if you see: docker build, docker save, mend image, container scan, BuildKit)
+- "SonarQube" (if you see: SonarQubePrepare, SonarQubeAnalyze, SonarQubePublish, sonar)
+- "Fortify" (if you see: sourceanalyzer, fortifyclient, Fortify SCA, .fpr files)
+- "Unknown" (if none of the above match)
+
+Respond with ONLY the tool name string. Nothing else.
+""".strip()
+
+
+def _parse_json_response(raw: str) -> dict:
+    """Parse JSON from LLM response, stripping markdown fences if present."""
+    raw = raw.strip()
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1]
     if raw.endswith("```"):
         raw = raw.rsplit("\n", 1)[0]
+    return json.loads(raw)
 
+
+def detect_tool(inline_yaml: str) -> str:
+    """Classify which security tool the inline YAML implements."""
+    client, deployment = _get_client()
+    response = client.chat.completions.create(
+        model=deployment,
+        messages=[
+            {"role": "system", "content": DETECTION_PROMPT},
+            {"role": "user", "content": inline_yaml},
+        ],
+        max_tokens=50,
+        temperature=0.0,
+    )
+    return response.choices[0].message.content.strip().strip('"')
+
+
+def _validate_output(result: dict) -> dict:
+    """Validate generated output using a second LLM call."""
+    client, deployment = _get_client()
+    response = client.chat.completions.create(
+        model=deployment,
+        messages=[
+            {"role": "system", "content": VALIDATION_PROMPT},
+            {"role": "user", "content": json.dumps(result, indent=2)},
+        ],
+        max_tokens=1024,
+        temperature=0.0,
+    )
     try:
-        result = json.loads(raw)
+        return _parse_json_response(response.choices[0].message.content)
     except json.JSONDecodeError:
-        result = {"error": "Failed to parse agent response as JSON.", "raw_response": raw}
+        return {"valid": True, "issues": [], "fix_instructions": ""}
+
+
+def analyse_pipeline(inline_yaml: str, max_retries: int = 2) -> dict:
+    """
+    Agentic analysis loop:
+    1. Detect tool type
+    2. Generate compliant hierarchy
+    3. Self-validate output
+    4. If validation fails, retry with fix instructions (up to max_retries)
+    """
+    client, deployment = _get_client()
+
+    # Step 1: Autonomous tool detection
+    detected_tool = detect_tool(inline_yaml)
+
+    # Step 2: Generate + validate loop
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Analyse this inline pipeline YAML for governance compliance:\n\n```yaml\n{inline_yaml}\n```"},
+    ]
+
+    attempt = 0
+    validation_log = []
+
+    while attempt <= max_retries:
+        attempt += 1
+
+        response = client.chat.completions.create(
+            model=deployment,
+            messages=messages,
+            max_tokens=16384,
+            temperature=0.1,
+        )
+
+        raw = response.choices[0].message.content.strip()
+        try:
+            result = _parse_json_response(raw)
+        except json.JSONDecodeError:
+            validation_log.append({"attempt": attempt, "error": "JSON parse failed"})
+            if attempt <= max_retries:
+                messages.append({"role": "assistant", "content": raw})
+                messages.append({"role": "user", "content": "Your response was not valid JSON. Return ONLY a JSON object, no markdown fences or preamble."})
+                continue
+            return {"error": "Failed to parse agent response as JSON after retries.", "raw_response": raw, "validation_log": validation_log}
+
+        # Step 3: Self-validation
+        validation = _validate_output(result)
+        validation_log.append({
+            "attempt": attempt,
+            "valid": validation.get("valid", False),
+            "issues": validation.get("issues", []),
+        })
+
+        if validation.get("valid", False):
+            # Passed validation — enrich with agent metadata
+            result["agent_metadata"] = {
+                "detected_tool": detected_tool,
+                "attempts": attempt,
+                "validation_log": validation_log,
+                "self_validated": True,
+            }
+            return result
+
+        # Step 4: Self-correction — feed fix instructions back
+        if attempt <= max_retries:
+            fix = validation.get("fix_instructions", "Fix the issues found.")
+            issues = validation.get("issues", [])
+            correction_msg = f"Validation failed. Issues found:\n"
+            for i, issue in enumerate(issues, 1):
+                correction_msg += f"{i}. {issue}\n"
+            correction_msg += f"\nFix instructions: {fix}\n\nRegenerate the complete JSON output with these fixes applied."
+
+            messages.append({"role": "assistant", "content": raw})
+            messages.append({"role": "user", "content": correction_msg})
+
+    # Exhausted retries — return best effort with validation log
+    result["agent_metadata"] = {
+        "detected_tool": detected_tool,
+        "attempts": attempt,
+        "validation_log": validation_log,
+        "self_validated": False,
+    }
     return result
+
+
+def analyse_multiple(yaml_blocks: list) -> list:
+    """
+    Multi-file agentic analysis:
+    1. Auto-detect tool for each YAML block
+    2. Process each independently
+    3. Return list of results
+    """
+    results = []
+    for i, yaml_text in enumerate(yaml_blocks):
+        if yaml_text.strip():
+            result = analyse_pipeline(yaml_text)
+            result["file_index"] = i + 1
+            results.append(result)
+    return results
 
 
 if __name__ == "__main__":
@@ -293,6 +452,14 @@ steps:
   - script: |
       echo "Checking quality gate..."
 """
-    print("Analysing...")
+    print("Analysing with agentic loop...")
     result = analyse_pipeline(test_yaml)
     print(json.dumps(result, indent=2))
+    if "agent_metadata" in result:
+        meta = result["agent_metadata"]
+        print(f"\n--- Agent Metadata ---")
+        print(f"Detected tool: {meta['detected_tool']}")
+        print(f"Attempts: {meta['attempts']}")
+        print(f"Self-validated: {meta['self_validated']}")
+        for log in meta["validation_log"]:
+            print(f"  Attempt {log['attempt']}: valid={log.get('valid', 'N/A')}, issues={log.get('issues', [])}")

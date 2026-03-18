@@ -4,7 +4,7 @@ Pipeline Governance Compliance Agent — Streamlit UI
 
 import streamlit as st
 import json
-from agent import analyse_pipeline
+from agent import analyse_pipeline, analyse_multiple
 
 st.set_page_config(page_title="CoE Compliance Agent", page_icon="🛡️", layout="wide", initial_sidebar_state="expanded")
 
@@ -41,10 +41,139 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def render_readme(content: str):
-    """Render README content as markdown."""
+def render_readme(content):
     if content and content.strip():
         st.markdown(content)
+
+
+def display_single_result(result):
+    """Display analysis results for a single pipeline."""
+    tool = result.get("tool_detected", "?")
+    score = result.get("compliance_score", 0)
+    orig = result.get("original_line_count", "?")
+    comp = result.get("compliant_line_count", "?")
+    reduction = result.get("reduction_percentage", 0)
+
+    st.markdown(f"""<div class="metric-grid">
+        <div class="metric-card"><div class="metric-value">{tool}</div><div class="metric-label">Tool Detected</div></div>
+        <div class="metric-card"><div class="metric-value">{score}%</div><div class="metric-label">Compliance Score</div></div>
+        <div class="metric-card"><div class="metric-value">{orig} → {comp}</div><div class="metric-label">Lines Before → After</div></div>
+        <div class="metric-card"><div class="metric-value">{reduction}%</div><div class="metric-label">Config Reduction</div></div>
+    </div>""", unsafe_allow_html=True)
+
+    bar_color = "#16a34a" if float(reduction) >= 70 else "#d97706" if float(reduction) >= 40 else "#dc2626"
+    st.markdown(f"""<div style="margin-bottom:1rem;"><div style="display:flex;justify-content:space-between;margin-bottom:0.2rem;"><span style="font-size:0.8rem;font-weight:600;color:#475569;">Configuration Reduction (DS-01)</span><span style="font-size:0.8rem;font-weight:700;color:{bar_color};">{reduction}%</span></div><div class="reduction-bar-bg"><div class="reduction-bar-fill" style="width:{min(float(reduction),100)}%;background:{bar_color};">{reduction}%</div></div></div>""", unsafe_allow_html=True)
+
+    tab_v, tab_c, tab_h, tab_r, tab_a, tab_j = st.tabs(["🚨 Violations", "✅ Consuming Pipeline", "📦 Template Hierarchy", "📖 READMEs", "🤖 Agent Trace", "🔧 Raw JSON"])
+
+    with tab_v:
+        violations = result.get("violations", [])
+        st.markdown(f"**{len(violations)} violation(s) identified**")
+        for v in violations:
+            sev = v.get("severity", "MEDIUM").upper()
+            with st.expander(f"{v.get('rule','')} — {v.get('description','')[:80]}"):
+                st.markdown(f"<span class='sev-{sev.lower()}'>{sev}</span>", unsafe_allow_html=True)
+                st.markdown(f"**Description:** {v.get('description','')}")
+                st.markdown(f"**Evidence:** `{v.get('evidence','')}`")
+                st.markdown(f"**Remediation:** {v.get('remediation','')}")
+
+    with tab_c:
+        st.markdown("**Layer 1 — Consuming Pipeline** (paste into app repo)")
+        st.code(result.get("compliant_yaml", ""), language="yaml")
+
+    with tab_h:
+        tfiles = result.get("template_files", [])
+        stages = [f for f in tfiles if f.get("hierarchy_level") == "stage"]
+        jobs = [f for f in tfiles if f.get("hierarchy_level") == "job"]
+        tasks = [f for f in tfiles if f.get("hierarchy_level") == "task"]
+        scripts = [f for f in tfiles if f.get("hierarchy_level") == "script"]
+        st.markdown(f"**{len(tfiles)} files generated**")
+
+        if stages:
+            st.markdown("<div class='section-head'><span class='h-stage'>STAGE</span> Layer 2</div>", unsafe_allow_html=True)
+            for f in stages:
+                with st.expander(f"📄 {f['filename']}"):
+                    st.caption(f"{f.get('description','')} → calls `{f.get('calls','')}`")
+                    st.code(f.get("content", ""), language="yaml")
+        if jobs:
+            st.markdown("<div class='h-connector'>↓ Stage calls Job</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-head'><span class='h-job'>JOB</span> Layer 3</div>", unsafe_allow_html=True)
+            for f in jobs:
+                with st.expander(f"📄 {f['filename']}"):
+                    st.caption(f"{f.get('description','')} → calls `{f.get('calls','')}`")
+                    st.code(f.get("content", ""), language="yaml")
+        if tasks:
+            st.markdown("<div class='h-connector'>↓ Job calls Task</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-head'><span class='h-task'>TASK</span> Layer 4</div>", unsafe_allow_html=True)
+            for f in tasks:
+                with st.expander(f"📄 {f['filename']}"):
+                    st.caption(f"{f.get('description','')} → calls `{f.get('calls','')}`")
+                    st.code(f.get("content", ""), language="yaml")
+        if scripts:
+            st.markdown("<div class='h-connector'>↓ Task calls Scripts via <code>- bash:</code></div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-head'><span class='h-script'>SCRIPT</span> Layer 5</div>", unsafe_allow_html=True)
+            for f in scripts:
+                with st.expander(f"📜 {f['filename']}"):
+                    st.caption(f.get("description", ""))
+                    st.code(f.get("content", ""), language="bash")
+
+    with tab_r:
+        rfiles = result.get("readme_files", [])
+        if rfiles:
+            st.markdown(f"**{len(rfiles)} README(s)**")
+            for rf in rfiles:
+                with st.expander(f"📖 {rf['filename']}"):
+                    st.caption(f"Template: `{rf.get('template_ref','')}`")
+                    render_readme(rf.get("content", ""))
+        else:
+            st.info("No READMEs generated.")
+
+    with tab_a:
+        meta = result.get("agent_metadata", {})
+        if meta:
+            st.markdown("**Agentic Execution Trace**")
+            a1, a2, a3 = st.columns(3)
+            with a1:
+                st.metric("Tool Detected", meta.get("detected_tool", "N/A"))
+            with a2:
+                st.metric("Attempts", meta.get("attempts", "N/A"))
+            with a3:
+                validated = meta.get("self_validated", False)
+                st.metric("Self-Validated", "✅ Pass" if validated else "⚠️ Best Effort")
+
+            st.markdown("**Validation Loop**")
+            for log_entry in meta.get("validation_log", []):
+                attempt_num = log_entry.get("attempt", "?")
+                is_valid = log_entry.get("valid", None)
+                issues = log_entry.get("issues", [])
+                if is_valid is True:
+                    st.success(f"Attempt {attempt_num}: Passed all validation checks")
+                elif is_valid is False:
+                    with st.expander(f"Attempt {attempt_num}: Failed — {len(issues)} issue(s) → agent self-corrected"):
+                        for issue in issues:
+                            st.markdown(f"- {issue}")
+                else:
+                    st.warning(f"Attempt {attempt_num}: {log_entry.get('error', 'Unknown error')} → agent retried")
+
+            st.markdown("---")
+            st.markdown("**Agent Decision Flow**")
+            flow = f"1. Tool Detection → {meta.get('detected_tool', '?')}\n"
+            flow += f"2. Generate compliant hierarchy (attempt 1)\n"
+            flow += f"3. Self-validate against 9 governance checks\n"
+            if meta.get("self_validated"):
+                flow += f"4. Validation passed → output delivered"
+            else:
+                flow += f"4. Fix issues → regenerate (up to {meta.get('attempts', '?')} attempts)\n5. Best-effort output delivered"
+            st.code(flow, language=None)
+        else:
+            st.info("No agent metadata available.")
+
+    with tab_j:
+        st.json(result)
+
+    st.markdown("---")
+    st.markdown("**Executive Summary**")
+    st.info(result.get("summary", ""))
 
 
 # ---- Sidebar ----
@@ -59,15 +188,18 @@ with st.sidebar:
     st.markdown("##### Load Example")
     example_choice = st.selectbox("Demo:", ["— Select —", "Mend SCA (104 lines)", "SonarQube CLI (20 lines)", "Mend SAST (148 lines)", "Container Scanning (175 lines)"], label_visibility="collapsed")
     st.markdown("---")
+    st.markdown("##### Analysis Mode")
+    multi_mode = st.toggle("Multi-file analysis", value=False, help="Paste multiple YAML blocks separated by '---'")
+    st.markdown("---")
     st.markdown("##### Template Hierarchy")
     st.code("L1  Consuming Pipeline\n └─ L2  Stage\n     └─ L3  Job\n         └─ L4  Orchestrator Task\n             └─ L5  Scripts (.sh)", language=None)
 
 # ---- Examples ----
 EXAMPLES = {
-    "Mend SCA (104 lines)": """# Mend SCA Inline Configuration (BEFORE CoE migration)\ntrigger:\n  branches:\n    include:\n      - main\n      - develop\n\npool:\n  name: 'BuildAgentPool'\n\nvariables:\n  WS_APIKEY: 'hardcoded-api-key-12345'\n  WS_USERKEY: 'hardcoded-user-key-67890'\n  WS_PRODUCTNAME: 'Website'\n  WS_PROJECTNAME: $(Build.Repository.Name)\n  WS_WSS_URL: 'https://saas.mend.io/agent'\n\nsteps:\n  - script: |\n      echo "Downloading WhiteSource Unified Agent..."\n      curl -LJO https://unified-agent.s3.amazonaws.com/wss-unified-agent.jar\n    displayName: 'Download WhiteSource Unified Agent'\n\n  - script: |\n      echo "Configuring WhiteSource scan..."\n      cat > wss-unified-agent.config << 'EOF'\n      apiKey=$(WS_APIKEY)\n      userKey=$(WS_USERKEY)\n      productName=$(WS_PRODUCTNAME)\n      projectName=$(WS_PROJECTNAME)\n      wss.url=$(WS_WSS_URL)\n      includes=**/*.jar,**/*.tgz,**/*.whl\n      excludes=**/node_modules/**,**/test/**\n      resolveAllDependencies=false\n      npm.resolveLockFile=true\n      npm.includeDevDependencies=false\n      maven.resolveDependencies=true\n      gradle.resolveDependencies=true\n      python.resolveDependencies=true\n      python.pipPath=pip3\n      log.level=info\n      forceCheckAllDependencies=false\n      offline=false\n      generateProjectDetailsJson=true\n      generateScanReport=true\n      scanReportFilenameFormat=\n      scanReportTimeoutMinutes=10\n      EOF\n    displayName: 'Configure WhiteSource'\n\n  - script: |\n      echo "Running WhiteSource scan..."\n      java -jar wss-unified-agent.jar \\\\\n        -c wss-unified-agent.config \\\\\n        -apiKey $(WS_APIKEY) \\\\\n        -userKey $(WS_USERKEY) \\\\\n        -project $(WS_PROJECTNAME) \\\\\n        -product $(WS_PRODUCTNAME) \\\\\n        -d .\n    displayName: 'Run WhiteSource Scan'\n    env:\n      WS_APIKEY: $(WS_APIKEY)\n      WS_USERKEY: $(WS_USERKEY)\n    continueOnError: true\n\n  - script: |\n      echo "Generating scan report..."\n      if [ -f "whitesource/scan_report.json" ]; then\n        cat whitesource/scan_report.json | python3 -c "\n        import json, sys\n        data = json.load(sys.stdin)\n        vulns = data.get('vulnerabilities', [])\n        critical = sum(1 for v in vulns if v.get('severity') == 'CRITICAL')\n        high = sum(1 for v in vulns if v.get('severity') == 'HIGH')\n        print(f'Critical: {critical}, High: {high}')\n        if critical > 0: sys.exit(1)\n        "\n      fi\n    displayName: 'Parse Scan Results'\n\n  - script: |\n      mkdir -p $(Build.ArtifactStagingDirectory)/whitesource\n      cp -r whitesource/* $(Build.ArtifactStagingDirectory)/whitesource/ 2>/dev/null || true\n    displayName: 'Stage Artifacts'\n\n  - task: PublishBuildArtifacts@1\n    inputs:\n      pathtoPublish: '$(Build.ArtifactStagingDirectory)/whitesource'\n      artifactName: 'WhiteSourceReport'\n    condition: always()\n\n  - script: |\n      POLICY_STATUS=$(cat whitesource/policy_check.json 2>/dev/null | python3 -c "\n      import json, sys\n      try:\n          data = json.load(sys.stdin)\n          print(len(data.get('policyViolations', [])))\n      except: print(0)\n      " 2>/dev/null || echo "0")\n      if [ "$$POLICY_STATUS" -gt 0 ]; then\n        echo "##vso[task.logissue type=error]Policy violations: $$POLICY_STATUS"\n        exit 1\n      fi\n    displayName: 'Enforce Policy Check'""",
-    "SonarQube CLI (20 lines)": """# SonarQube CLI Inline Configuration (BEFORE CoE migration)\nsteps:\n  - task: SonarQubePrepare@7\n    inputs:\n      SonarQube: 'SonarQubeConnection'\n      scannerMode: 'cli'\n      configMode: 'manual'\n      cliProjectKey: 'Website:MyRepo'\n      cliProjectName: 'Website:MyRepo'\n      cliSources: '.'\n      extraProperties: |\n        sonar.exclusions=**/node_modules/**\n        sonar.coverage.exclusions=**/*.test.js\n  - task: SonarQubeAnalyze@7\n    inputs:\n      jdkversion: 'JAVA_HOME_17_X64'\n  - task: SonarQubePublish@7\n    inputs:\n      pollingTimeoutSec: '300'\n  - script: |\n      GATE_STATUS=$(curl -s -u $(SONAR_TOKEN): "$(SONAR_URL)/api/qualitygates/project_status?projectKey=Website:MyRepo" | python3 -c "import json,sys; print(json.load(sys.stdin)['projectStatus']['status'])")\n      if [ "$$GATE_STATUS" != "OK" ]; then\n        echo "##vso[task.logissue type=error]Quality Gate FAILED"\n        exit 1\n      fi\n    displayName: 'Check Quality Gate'""",
-    "Mend SAST (148 lines)": """# Mend SAST Inline Configuration (BEFORE CoE migration)\ntrigger:\n  branches:\n    include:\n      - main\n      - develop\n\npool:\n  name: 'BuildAgentPool'\n\nvariables:\n  MEND_URL: 'https://sast.mend.io'\n  MEND_API_KEY: 'hardcoded-mend-api-key-sast-12345'\n  MEND_USER_KEY: 'hardcoded-mend-user-key-sast-67890'\n  MEND_EMAIL: 'dev-team@org.gov.sg'\n  FAIL_ON_CRITICAL: 'true'\n  FAIL_ON_HIGH: 'false'\n  FAIL_ON_MEDIUM: 'false'\n\nsteps:\n  - script: |\n      curl -sL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend\n      chmod +x /usr/local/bin/mend\n      mend version\n    displayName: 'Install Mend CLI'\n\n  - script: |\n      export MEND_URL=$(MEND_URL)\n      export MEND_EMAIL=$(MEND_EMAIL)\n      export MEND_USER_KEY=$(MEND_USER_KEY)\n      mend sast \\\\\n        --non-interactive \\\\\n        --formats "json,html" \\\\\n        --report-dir "$(Build.ArtifactStagingDirectory)/mend-sast" \\\\\n        --scope "$(Build.Repository.Name)" \\\\\n        . 2>&1 | tee sast_scan_output.log\n      echo "##vso[task.setvariable variable=SAST_EXIT_CODE]$$?"\n    displayName: 'Run Mend SAST Scan'\n    env:\n      MEND_URL: $(MEND_URL)\n      MEND_EMAIL: $(MEND_EMAIL)\n      MEND_USER_KEY: $(MEND_USER_KEY)\n      MEND_API_KEY: $(MEND_API_KEY)\n    continueOnError: true\n\n  - script: |\n      REPORT_DIR="$(Build.ArtifactStagingDirectory)/mend-sast"\n      if [ -f "$$REPORT_DIR/results.json" ]; then\n        CRITICAL=$$(python3 -c "import json; d=json.load(open('$$REPORT_DIR/results.json')); print(sum(1 for f in d.get('findings',[]) if f.get('severity','').upper()=='CRITICAL'))")\n        HIGH=$$(python3 -c "import json; d=json.load(open('$$REPORT_DIR/results.json')); print(sum(1 for f in d.get('findings',[]) if f.get('severity','').upper()=='HIGH'))")\n        MEDIUM=$$(python3 -c "import json; d=json.load(open('$$REPORT_DIR/results.json')); print(sum(1 for f in d.get('findings',[]) if f.get('severity','').upper()=='MEDIUM'))")\n        echo "##vso[task.setvariable variable=SAST_CRITICAL]$$CRITICAL"\n        echo "##vso[task.setvariable variable=SAST_HIGH]$$HIGH"\n        echo "##vso[task.setvariable variable=SAST_MEDIUM]$$MEDIUM"\n      fi\n    displayName: 'Parse SAST Findings'\n\n  - task: PublishBuildArtifacts@1\n    inputs:\n      pathtoPublish: '$(Build.ArtifactStagingDirectory)/mend-sast'\n      artifactName: 'MendSASTReport'\n    condition: always()\n\n  - script: |\n      SHOULD_FAIL=0\n      if [ "$(FAIL_ON_CRITICAL)" = "true" ] && [ "$(SAST_CRITICAL)" -gt 0 ]; then SHOULD_FAIL=1; fi\n      if [ "$(FAIL_ON_HIGH)" = "true" ] && [ "$(SAST_HIGH)" -gt 0 ]; then SHOULD_FAIL=1; fi\n      if [ "$$SHOULD_FAIL" -eq 1 ]; then exit 1; fi\n    displayName: 'Enforce SAST Policy'""",
-    "Container Scanning (175 lines)": """# Container Scanning Inline (BEFORE CoE migration)\ntrigger:\n  branches:\n    include:\n      - main\n      - develop\n\npool:\n  name: 'BuildAgentPool'\n\nvariables:\n  DOCKER_REGISTRY: 'myregistry.azurecr.io'\n  IMAGE_NAME: 'myapp'\n  IMAGE_TAG: '$(Build.BuildId)'\n  MEND_URL: 'https://saas.mend.io'\n  MEND_API_KEY: 'hardcoded-mend-api-key-container-12345'\n  MEND_USER_KEY: 'hardcoded-mend-user-key-container-67890'\n  MEND_EMAIL: 'dev-team@org.gov.sg'\n  DOCKERFILE_PATH: './Dockerfile'\n  FAIL_ON_CRITICAL: 'true'\n  FAIL_ON_HIGH: 'false'\n\nsteps:\n  - script: |\n      docker build -t $(DOCKER_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE_PATH) .\n    displayName: 'Build Docker Image'\n\n  - script: |\n      docker save $(DOCKER_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) -o image.tar\n    displayName: 'Export Image to Tar'\n\n  - script: |\n      curl -sL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend\n      chmod +x /usr/local/bin/mend\n    displayName: 'Install Mend CLI'\n\n  - script: |\n      export MEND_URL=$(MEND_URL)\n      export MEND_EMAIL=$(MEND_EMAIL)\n      export MEND_USER_KEY=$(MEND_USER_KEY)\n      mend image $(DOCKER_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) \\\\\n        --non-interactive \\\\\n        --formats "json,sarif,spdx-json,cyclonedx-json" \\\\\n        --report-dir "$(Build.ArtifactStagingDirectory)/container-scan" \\\\\n        --filename image.tar\n    displayName: 'Run Mend Container Scan'\n    env:\n      MEND_URL: $(MEND_URL)\n      MEND_EMAIL: $(MEND_EMAIL)\n      MEND_USER_KEY: $(MEND_USER_KEY)\n      MEND_API_KEY: $(MEND_API_KEY)\n    continueOnError: true\n\n  - script: |\n      REPORT_DIR="$(Build.ArtifactStagingDirectory)/container-scan"\n      if [ -f "$$REPORT_DIR/results.json" ]; then\n        CRITICAL=$$(python3 -c "import json; d=json.load(open('$$REPORT_DIR/results.json')); print(sum(1 for v in d.get('vulnerabilities',d.get('findings',[])) if v.get('severity','').upper()=='CRITICAL'))")\n        HIGH=$$(python3 -c "import json; d=json.load(open('$$REPORT_DIR/results.json')); print(sum(1 for v in d.get('vulnerabilities',d.get('findings',[])) if v.get('severity','').upper()=='HIGH'))")\n        echo "##vso[task.setvariable variable=CONTAINER_CRITICAL]$$CRITICAL"\n        echo "##vso[task.setvariable variable=CONTAINER_HIGH]$$HIGH"\n      fi\n    displayName: 'Parse Results'\n\n  - task: PublishBuildArtifacts@1\n    inputs:\n      pathtoPublish: '$(Build.ArtifactStagingDirectory)/container-scan'\n      artifactName: 'ContainerScanReport'\n    condition: always()\n\n  - script: |\n      SHOULD_FAIL=0\n      if [ "$(FAIL_ON_CRITICAL)" = "true" ] && [ "$(CONTAINER_CRITICAL)" -gt 0 ]; then SHOULD_FAIL=1; fi\n      if [ "$(FAIL_ON_HIGH)" = "true" ] && [ "$(CONTAINER_HIGH)" -gt 0 ]; then SHOULD_FAIL=1; fi\n      if [ "$$SHOULD_FAIL" -eq 1 ]; then exit 1; fi\n    displayName: 'Enforce Container Policy'\n\n  - script: |\n      docker login $(DOCKER_REGISTRY) -u $(ACR_USERNAME) -p $(ACR_PASSWORD)\n      docker push $(DOCKER_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)\n    displayName: 'Push to Registry'\n    env:\n      ACR_USERNAME: $(ACR_USERNAME)\n      ACR_PASSWORD: $(ACR_PASSWORD)\n    condition: succeeded()""",
+    "Mend SCA (104 lines)": "# Mend SCA Inline Configuration (BEFORE CoE migration)\ntrigger:\n  branches:\n    include:\n      - main\n      - develop\n\npool:\n  name: 'BuildAgentPool'\n\nvariables:\n  WS_APIKEY: 'hardcoded-api-key-12345'\n  WS_USERKEY: 'hardcoded-user-key-67890'\n  WS_PRODUCTNAME: 'Website'\n  WS_PROJECTNAME: $(Build.Repository.Name)\n  WS_WSS_URL: 'https://saas.mend.io/agent'\n\nsteps:\n  - script: |\n      echo \"Downloading WhiteSource Unified Agent...\"\n      curl -LJO https://unified-agent.s3.amazonaws.com/wss-unified-agent.jar\n    displayName: 'Download WhiteSource Unified Agent'\n\n  - script: |\n      echo \"Configuring WhiteSource scan...\"\n      cat > wss-unified-agent.config << 'EOF'\n      apiKey=$(WS_APIKEY)\n      userKey=$(WS_USERKEY)\n      productName=$(WS_PRODUCTNAME)\n      projectName=$(WS_PROJECTNAME)\n      wss.url=$(WS_WSS_URL)\n      includes=**/*.jar,**/*.tgz,**/*.whl\n      excludes=**/node_modules/**,**/test/**\n      resolveAllDependencies=false\n      npm.resolveLockFile=true\n      npm.includeDevDependencies=false\n      maven.resolveDependencies=true\n      gradle.resolveDependencies=true\n      python.resolveDependencies=true\n      python.pipPath=pip3\n      log.level=info\n      forceCheckAllDependencies=false\n      offline=false\n      generateProjectDetailsJson=true\n      generateScanReport=true\n      scanReportFilenameFormat=\n      scanReportTimeoutMinutes=10\n      EOF\n    displayName: 'Configure WhiteSource'\n\n  - script: |\n      echo \"Running WhiteSource scan...\"\n      java -jar wss-unified-agent.jar \\\n        -c wss-unified-agent.config \\\n        -apiKey $(WS_APIKEY) \\\n        -userKey $(WS_USERKEY) \\\n        -project $(WS_PROJECTNAME) \\\n        -product $(WS_PRODUCTNAME) \\\n        -d .\n    displayName: 'Run WhiteSource Scan'\n    env:\n      WS_APIKEY: $(WS_APIKEY)\n      WS_USERKEY: $(WS_USERKEY)\n    continueOnError: true\n\n  - script: |\n      if [ -f \"whitesource/scan_report.json\" ]; then\n        cat whitesource/scan_report.json | python3 -c \"\n        import json, sys\n        data = json.load(sys.stdin)\n        vulns = data.get('vulnerabilities', [])\n        critical = sum(1 for v in vulns if v.get('severity') == 'CRITICAL')\n        if critical > 0: sys.exit(1)\n        \"\n      fi\n    displayName: 'Parse Scan Results'\n\n  - script: |\n      mkdir -p $(Build.ArtifactStagingDirectory)/whitesource\n      cp -r whitesource/* $(Build.ArtifactStagingDirectory)/whitesource/ 2>/dev/null || true\n    displayName: 'Stage Artifacts'\n\n  - task: PublishBuildArtifacts@1\n    inputs:\n      pathtoPublish: '$(Build.ArtifactStagingDirectory)/whitesource'\n      artifactName: 'WhiteSourceReport'\n    condition: always()\n\n  - script: |\n      POLICY_STATUS=$(cat whitesource/policy_check.json 2>/dev/null | python3 -c \"\n      import json, sys\n      try:\n          data = json.load(sys.stdin)\n          print(len(data.get('policyViolations', [])))\n      except: print(0)\n      \" 2>/dev/null || echo \"0\")\n      if [ \\\"$POLICY_STATUS\\\" -gt 0 ]; then\n        echo \\\"##vso[task.logissue type=error]Policy violations: $POLICY_STATUS\\\"\n        exit 1\n      fi\n    displayName: 'Enforce Policy Check'",
+    "SonarQube CLI (20 lines)": "# SonarQube CLI Inline Configuration\nsteps:\n  - task: SonarQubePrepare@7\n    inputs:\n      SonarQube: 'SonarQubeConnection'\n      scannerMode: 'cli'\n      configMode: 'manual'\n      cliProjectKey: 'Website:MyRepo'\n      cliProjectName: 'Website:MyRepo'\n      cliSources: '.'\n      extraProperties: |\n        sonar.exclusions=**/node_modules/**\n        sonar.coverage.exclusions=**/*.test.js\n  - task: SonarQubeAnalyze@7\n    inputs:\n      jdkversion: 'JAVA_HOME_17_X64'\n  - task: SonarQubePublish@7\n    inputs:\n      pollingTimeoutSec: '300'\n  - script: |\n      echo \"Checking quality gate...\"\n    displayName: 'Check Quality Gate'",
+    "Mend SAST (148 lines)": "# Mend SAST Inline Configuration\ntrigger:\n  branches:\n    include:\n      - main\n\npool:\n  name: 'BuildAgentPool'\n\nvariables:\n  MEND_URL: 'https://sast.mend.io'\n  MEND_API_KEY: 'hardcoded-key-12345'\n  MEND_USER_KEY: 'hardcoded-key-67890'\n  MEND_EMAIL: 'dev@org.gov.sg'\n  FAIL_ON_CRITICAL: 'true'\n  FAIL_ON_HIGH: 'false'\n\nsteps:\n  - script: |\n      curl -sL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend\n      chmod +x /usr/local/bin/mend\n    displayName: 'Install Mend CLI'\n\n  - script: |\n      export MEND_URL=$(MEND_URL)\n      export MEND_EMAIL=$(MEND_EMAIL)\n      export MEND_USER_KEY=$(MEND_USER_KEY)\n      mend sast --non-interactive --formats \"json,html\" --report-dir \"$(Build.ArtifactStagingDirectory)/mend-sast\" --scope \"$(Build.Repository.Name)\" .\n    displayName: 'Run Mend SAST Scan'\n    env:\n      MEND_URL: $(MEND_URL)\n      MEND_EMAIL: $(MEND_EMAIL)\n      MEND_USER_KEY: $(MEND_USER_KEY)\n      MEND_API_KEY: $(MEND_API_KEY)\n    continueOnError: true\n\n  - task: PublishBuildArtifacts@1\n    inputs:\n      pathtoPublish: '$(Build.ArtifactStagingDirectory)/mend-sast'\n      artifactName: 'MendSASTReport'\n    condition: always()\n\n  - script: |\n      SHOULD_FAIL=0\n      if [ \"$(FAIL_ON_CRITICAL)\" = \"true\" ] && [ \"$(SAST_CRITICAL)\" -gt 0 ]; then SHOULD_FAIL=1; fi\n      if [ \"$SHOULD_FAIL\" -eq 1 ]; then exit 1; fi\n    displayName: 'Enforce SAST Policy'",
+    "Container Scanning (175 lines)": "# Container Scanning Inline\ntrigger:\n  branches:\n    include:\n      - main\n\npool:\n  name: 'BuildAgentPool'\n\nvariables:\n  DOCKER_REGISTRY: 'myregistry.azurecr.io'\n  IMAGE_NAME: 'myapp'\n  IMAGE_TAG: '$(Build.BuildId)'\n  MEND_URL: 'https://saas.mend.io'\n  MEND_API_KEY: 'hardcoded-key-12345'\n  MEND_USER_KEY: 'hardcoded-key-67890'\n  MEND_EMAIL: 'dev@org.gov.sg'\n  FAIL_ON_CRITICAL: 'true'\n  FAIL_ON_HIGH: 'false'\n\nsteps:\n  - script: |\n      docker build -t $(DOCKER_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) -f ./Dockerfile .\n    displayName: 'Build Docker Image'\n\n  - script: |\n      docker save $(DOCKER_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) -o image.tar\n    displayName: 'Export Image to Tar'\n\n  - script: |\n      curl -sL https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend\n      chmod +x /usr/local/bin/mend\n    displayName: 'Install Mend CLI'\n\n  - script: |\n      export MEND_URL=$(MEND_URL)\n      mend image $(DOCKER_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) --non-interactive --formats \"json,sarif,spdx-json,cyclonedx-json\" --report-dir \"$(Build.ArtifactStagingDirectory)/container-scan\" --filename image.tar\n    displayName: 'Run Mend Container Scan'\n    env:\n      MEND_URL: $(MEND_URL)\n      MEND_EMAIL: $(MEND_EMAIL)\n      MEND_USER_KEY: $(MEND_USER_KEY)\n      MEND_API_KEY: $(MEND_API_KEY)\n    continueOnError: true\n\n  - task: PublishBuildArtifacts@1\n    inputs:\n      pathtoPublish: '$(Build.ArtifactStagingDirectory)/container-scan'\n      artifactName: 'ContainerScanReport'\n    condition: always()\n\n  - script: |\n      SHOULD_FAIL=0\n      if [ \"$(FAIL_ON_CRITICAL)\" = \"true\" ] && [ \"$(CONTAINER_CRITICAL)\" -gt 0 ]; then SHOULD_FAIL=1; fi\n      if [ \"$SHOULD_FAIL\" -eq 1 ]; then exit 1; fi\n    displayName: 'Enforce Container Policy'\n\n  - script: |\n      docker login $(DOCKER_REGISTRY) -u $(ACR_USERNAME) -p $(ACR_PASSWORD)\n      docker push $(DOCKER_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)\n    displayName: 'Push to Registry'\n    env:\n      ACR_USERNAME: $(ACR_USERNAME)\n      ACR_PASSWORD: $(ACR_PASSWORD)\n    condition: succeeded()",
 }
 
 # ---- Header ----
@@ -79,6 +211,8 @@ col_in, col_out = st.columns([5, 7], gap="large")
 
 with col_in:
     st.markdown('<div class="section-head">INPUT — INLINE PIPELINE YAML</div>', unsafe_allow_html=True)
+    if multi_mode:
+        st.caption("Paste multiple YAML blocks separated by `---`")
     input_yaml = st.text_area("yaml", value=default_yaml, height=520, label_visibility="collapsed", placeholder="Paste inline Azure DevOps YAML...")
     btn = st.button("🔍  Analyse & Generate Hierarchy", type="primary", use_container_width=True)
 
@@ -86,104 +220,30 @@ with col_out:
     st.markdown('<div class="section-head">ANALYSIS RESULTS</div>', unsafe_allow_html=True)
 
     if btn and input_yaml.strip():
-        with st.spinner("Analysing against 8 governance rules and generating full hierarchy..."):
-            result = analyse_pipeline(input_yaml)
-
-        if "error" in result:
-            st.error(f"Agent error: {result['error']}")
-            with st.expander("Raw response"):
-                st.code(result.get("raw_response", ""), language="text")
+        if multi_mode:
+            yaml_blocks = [b.strip() for b in input_yaml.split("---") if b.strip()]
+            st.markdown(f"**Multi-file mode: {len(yaml_blocks)} YAML block(s) detected**")
+            with st.spinner(f"🤖 Agent processing {len(yaml_blocks)} files: detecting → generating → validating..."):
+                results = analyse_multiple(yaml_blocks)
+            for r in results:
+                idx = r.get("file_index", "?")
+                meta = r.get("agent_metadata", {})
+                tool_name = meta.get("detected_tool", r.get("tool_detected", "Unknown"))
+                with st.expander(f"📄 File {idx}: {tool_name}", expanded=(idx == 1)):
+                    if "error" in r:
+                        st.error(r["error"])
+                    else:
+                        display_single_result(r)
         else:
-            tool = result.get("tool_detected", "?")
-            score = result.get("compliance_score", 0)
-            orig = result.get("original_line_count", "?")
-            comp = result.get("compliant_line_count", "?")
-            reduction = result.get("reduction_percentage", 0)
+            with st.spinner("🤖 Agent running: detecting tool → generating hierarchy → self-validating → correcting if needed..."):
+                result = analyse_pipeline(input_yaml)
 
-            st.markdown(f"""<div class="metric-grid">
-                <div class="metric-card"><div class="metric-value">{tool}</div><div class="metric-label">Tool Detected</div></div>
-                <div class="metric-card"><div class="metric-value">{score}%</div><div class="metric-label">Compliance Score</div></div>
-                <div class="metric-card"><div class="metric-value">{orig} → {comp}</div><div class="metric-label">Lines Before → After</div></div>
-                <div class="metric-card"><div class="metric-value">{reduction}%</div><div class="metric-label">Config Reduction</div></div>
-            </div>""", unsafe_allow_html=True)
-
-            bar_color = "#16a34a" if float(reduction) >= 70 else "#d97706" if float(reduction) >= 40 else "#dc2626"
-            st.markdown(f"""<div style="margin-bottom:1rem;"><div style="display:flex;justify-content:space-between;margin-bottom:0.2rem;"><span style="font-size:0.8rem;font-weight:600;color:#475569;">Configuration Reduction (DS-01)</span><span style="font-size:0.8rem;font-weight:700;color:{bar_color};">{reduction}%</span></div><div class="reduction-bar-bg"><div class="reduction-bar-fill" style="width:{min(float(reduction),100)}%;background:{bar_color};">{reduction}%</div></div></div>""", unsafe_allow_html=True)
-
-            tab_v, tab_c, tab_h, tab_r, tab_j = st.tabs(["🚨 Violations", "✅ Consuming Pipeline", "📦 Template Hierarchy", "📖 READMEs", "🔧 Raw JSON"])
-
-            with tab_v:
-                violations = result.get("violations", [])
-                st.markdown(f"**{len(violations)} violation(s) identified**")
-                for v in violations:
-                    sev = v.get("severity", "MEDIUM").upper()
-                    with st.expander(f"{v.get('rule','')} — {v.get('description','')[:80]}"):
-                        st.markdown(f"<span class='sev-{sev.lower()}'>{sev}</span>", unsafe_allow_html=True)
-                        st.markdown(f"**Description:** {v.get('description','')}")
-                        st.markdown(f"**Evidence:** `{v.get('evidence','')}`")
-                        st.markdown(f"**Remediation:** {v.get('remediation','')}")
-
-            with tab_c:
-                st.markdown("**Layer 1 — Consuming Pipeline** (paste into app repo)")
-                st.code(result.get("compliant_yaml", ""), language="yaml")
-
-            with tab_h:
-                tfiles = result.get("template_files", [])
-                stages  = [f for f in tfiles if f.get("hierarchy_level") == "stage"]
-                jobs    = [f for f in tfiles if f.get("hierarchy_level") == "job"]
-                tasks   = [f for f in tfiles if f.get("hierarchy_level") == "task"]
-                scripts = [f for f in tfiles if f.get("hierarchy_level") == "script"]
-
-                st.markdown(f"**{len(tfiles)} files generated**")
-
-                if stages:
-                    st.markdown("<div class='section-head'><span class='h-stage'>STAGE</span> Layer 2 — Stage Templates</div>", unsafe_allow_html=True)
-                    for f in stages:
-                        with st.expander(f"📄 {f['filename']}"):
-                            st.caption(f"{f.get('description','')} → calls `{f.get('calls','')}`")
-                            st.code(f.get("content", ""), language="yaml")
-
-                if jobs:
-                    st.markdown("<div class='h-connector'>↓ Stage calls Job via <code>- template:</code></div>", unsafe_allow_html=True)
-                    st.markdown("<div class='section-head'><span class='h-job'>JOB</span> Layer 3 — Job Templates</div>", unsafe_allow_html=True)
-                    for f in jobs:
-                        with st.expander(f"📄 {f['filename']}"):
-                            st.caption(f"{f.get('description','')} → calls `{f.get('calls','')}`")
-                            st.code(f.get("content", ""), language="yaml")
-
-                if tasks:
-                    st.markdown("<div class='h-connector'>↓ Job calls Task via <code>- template:</code></div>", unsafe_allow_html=True)
-                    st.markdown("<div class='section-head'><span class='h-task'>TASK</span> Layer 4 — Orchestrator Task Templates</div>", unsafe_allow_html=True)
-                    for f in tasks:
-                        with st.expander(f"📄 {f['filename']}"):
-                            st.caption(f"{f.get('description','')} → calls `{f.get('calls','')}`")
-                            st.code(f.get("content", ""), language="yaml")
-
-                if scripts:
-                    st.markdown("<div class='h-connector'>↓ Task calls Scripts via <code>- bash:</code></div>", unsafe_allow_html=True)
-                    st.markdown("<div class='section-head'><span class='h-script'>SCRIPT</span> Layer 5 — Bash Scripts (.sh)</div>", unsafe_allow_html=True)
-                    for f in scripts:
-                        with st.expander(f"📜 {f['filename']}"):
-                            st.caption(f.get("description", ""))
-                            st.code(f.get("content", ""), language="bash")
-
-            with tab_r:
-                rfiles = result.get("readme_files", [])
-                if rfiles:
-                    st.markdown(f"**{len(rfiles)} README(s)** — CoE documentation standard with Mermaid flowcharts")
-                    for rf in rfiles:
-                        with st.expander(f"📖 {rf['filename']}"):
-                            st.caption(f"Template: `{rf.get('template_ref','')}`")
-                            render_readme(rf.get("content", ""))
-                else:
-                    st.info("No READMEs generated.")
-
-            with tab_j:
-                st.json(result)
-
-            st.markdown("---")
-            st.markdown("**Executive Summary**")
-            st.info(result.get("summary", ""))
+            if "error" in result:
+                st.error(f"Agent error: {result['error']}")
+                with st.expander("Raw response"):
+                    st.code(result.get("raw_response", ""), language="text")
+            else:
+                display_single_result(result)
 
     elif btn:
         st.warning("Paste some YAML first.")

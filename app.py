@@ -1,5 +1,5 @@
 """
-Pipeline Governance Compliance Agent — Streamlit UI
+Pipeline Governance Compliance Agent - Streamlit UI
 """
 
 import streamlit as st
@@ -60,8 +60,8 @@ def display_single_result(result):
 
     st.markdown(f"""<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.8rem;margin-bottom:1rem;">
         <div class="metric-card"><div class="metric-value">{tool}</div><div class="metric-label">Tool Detected</div></div>
-        <div class="metric-card"><div class="metric-value" style="color:{before_color}">{score_before}%</div><div class="metric-label">Compliance (Before)</div></div>
-        <div class="metric-card"><div class="metric-value" style="color:{after_color}">{score_after}%</div><div class="metric-label">Compliance (After)</div></div>
+        <div class="metric-card"><div class="metric-value" style="color:{before_color}">{score_before}%</div><div class="metric-label">Input Compliance</div></div>
+        <div class="metric-card"><div class="metric-value" style="color:{after_color}">{score_after}%</div><div class="metric-label">Output Compliance</div></div>
         <div class="metric-card"><div class="metric-value">{orig} → {comp}</div><div class="metric-label">Lines Before → After</div></div>
         <div class="metric-card"><div class="metric-value">{reduction}%</div><div class="metric-label">Config Reduction</div></div>
     </div>""", unsafe_allow_html=True)
@@ -69,21 +69,21 @@ def display_single_result(result):
     bar_color = "#16a34a" if float(reduction) >= 70 else "#d97706" if float(reduction) >= 40 else "#dc2626"
     st.markdown(f"""<div style="margin-bottom:1rem;"><div style="display:flex;justify-content:space-between;margin-bottom:0.2rem;"><span style="font-size:0.8rem;font-weight:600;color:#475569;">Configuration Reduction (DS-01)</span><span style="font-size:0.8rem;font-weight:700;color:{bar_color};">{reduction}%</span></div><div class="reduction-bar-bg"><div class="reduction-bar-fill" style="width:{min(float(reduction),100)}%;background:{bar_color};">{reduction}%</div></div></div>""", unsafe_allow_html=True)
 
-    tab_v, tab_c, tab_h, tab_r, tab_a, tab_j = st.tabs(["🚨 Violations", "✅ Consuming Pipeline", "📦 Template Hierarchy", "📖 READMEs", "🤖 Agent Trace", "🔧 Raw JSON"])
+    tab_v, tab_c, tab_h, tab_r, tab_a, tab_j = st.tabs(["🚨 Input Violations", "✅ Consuming Pipeline", "📦 Template Hierarchy", "📖 READMEs", "🤖 Agent Trace", "🔧 Raw JSON"])
 
     with tab_v:
         violations = result.get("violations", [])
-        st.markdown(f"**{len(violations)} violation(s) identified**")
+        st.markdown(f"**{len(violations)} violation(s) in the input YAML** (these are what the agent fixed)")
         for v in violations:
             sev = v.get("severity", "MEDIUM").upper()
-            with st.expander(f"{v.get('rule','')} — {v.get('description','')[:80]}"):
+            with st.expander(f"{v.get('rule','')} - {v.get('description','')[:80]}"):
                 st.markdown(f"<span class='sev-{sev.lower()}'>{sev}</span>", unsafe_allow_html=True)
                 st.markdown(f"**Description:** {v.get('description','')}")
                 st.markdown(f"**Evidence:** `{v.get('evidence','')}`")
                 st.markdown(f"**Remediation:** {v.get('remediation','')}")
 
     with tab_c:
-        st.markdown("**Layer 1 — Consuming Pipeline** (paste into app repo)")
+        st.markdown("**Layer 1 - Consuming Pipeline** (paste into app repo)")
         st.code(result.get("compliant_yaml", ""), language="yaml")
 
     with tab_h:
@@ -158,9 +158,9 @@ def display_single_result(result):
                 struct_issues = log_entry.get("structural_issues", len(issues))
 
                 if is_valid is True:
-                    st.success(f"Attempt {attempt_num}: ✅ Passed — compliance: {score_after}%, 0 issues")
+                    st.success(f"Attempt {attempt_num}: ✅ Passed - compliance: {score_after}%, 0 issues")
                 elif is_valid is False:
-                    label = f"Attempt {attempt_num}: ❌ Failed — compliance: {score_after}%, {struct_issues} issue(s)"
+                    label = f"Attempt {attempt_num}: ❌ Failed - compliance: {score_after}%, {struct_issues} issue(s)"
                     if attempt_num < meta.get("attempts", 99):
                         label += " → agent self-corrected"
                     with st.expander(label):
@@ -194,13 +194,13 @@ def display_single_result(result):
 with st.sidebar:
     st.markdown("### 🛡️ CoE Compliance Agent")
     st.caption("Pipeline Governance PoC")
-    st.caption("CSC3101 Capstone — Jiang Weimin")
+    st.caption("CSC3101 Capstone - Jiang Weimin")
     st.markdown("---")
     st.markdown("##### About")
     st.markdown("AI agent that reads inline Azure DevOps pipeline YAML, identifies governance violations, and generates the full 5-layer template hierarchy with documentation.")
     st.markdown("---")
     st.markdown("##### Load Example")
-    example_choice = st.selectbox("Demo:", ["— Select —", "Mend SCA (104 lines)", "SonarQube CLI (20 lines)", "Mend SAST (148 lines)", "Container Scanning (175 lines)", "Multi-Tool (3 files)"], label_visibility="collapsed")
+    example_choice = st.selectbox("Demo:", ["- Select -", "Mend SCA (104 lines)", "SonarQube CLI (20 lines)", "Mend SAST (148 lines)", "Container Scanning (175 lines)", "Multi-Tool (3 files)"], label_visibility="collapsed")
     st.markdown("---")
     st.markdown("##### Analysis Mode")
     auto_multi = (example_choice == "Multi-Tool (3 files)")
@@ -221,12 +221,12 @@ EXAMPLES = {
 # ---- Header ----
 st.markdown("""<div class="header-banner"><h1>🛡️ Pipeline Governance Compliance Agent</h1><p>Analyse inline Azure DevOps YAML against CoE governance rules • Generate full 5-layer template hierarchy • Auto-produce documentation</p></div>""", unsafe_allow_html=True)
 
-default_yaml = EXAMPLES.get(example_choice, "") if example_choice and example_choice != "— Select —" else ""
+default_yaml = EXAMPLES.get(example_choice, "") if example_choice and example_choice != "- Select -" else ""
 
 col_in, col_out = st.columns([5, 7], gap="large")
 
 with col_in:
-    st.markdown('<div class="section-head">INPUT — INLINE PIPELINE YAML</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-head">INPUT - INLINE PIPELINE YAML</div>', unsafe_allow_html=True)
     if multi_mode:
         st.caption("Paste multiple YAML blocks separated by `---`")
     input_yaml = st.text_area("yaml", value=default_yaml, height=520, label_visibility="collapsed", placeholder="Paste inline Azure DevOps YAML...")

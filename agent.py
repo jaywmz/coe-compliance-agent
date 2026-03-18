@@ -383,21 +383,27 @@ def analyse_pipeline(inline_yaml: str, max_retries: int = 3) -> dict:
         # Step 3: Self-validation
         validation = _validate_output(result)
 
-        # Step 4: Compliance score threshold check
-        score_after = result.get("compliance_score_after", result.get("compliance_score", 0))
-        score_pass = float(score_after) >= 90
+        # Step 4: Compute real compliance score from validator (don't trust self-reported)
+        issues = validation.get("issues", [])
         struct_pass = validation.get("valid", False)
 
-        issues = validation.get("issues", [])
-        if not score_pass:
-            issues.append(f"compliance_score_after is {score_after}% — must be >= 90%. Ensure all generated templates, scripts, and READMEs fully comply with all 8 governance rules.")
+        # Real score: start at 100, deduct per issue. Each structural issue = ~12 points off.
+        validator_score = max(0, 100 - (len(issues) * 12))
+        # Override the self-reported score with the validator-computed one
+        result["compliance_score_after"] = validator_score if not struct_pass else max(validator_score, int(result.get("compliance_score_after", result.get("compliance_score", 0))))
 
+        score_after = result["compliance_score_after"]
+        score_pass = float(score_after) >= 90
         all_pass = struct_pass and score_pass
+
+        if not score_pass and struct_pass:
+            issues.append(f"Validator-adjusted compliance score is {score_after}% — must be >= 90%.")
 
         validation_log.append({
             "attempt": attempt,
             "valid": all_pass,
             "structural_valid": struct_pass,
+            "structural_issues": len(issues),
             "score_after": score_after,
             "score_pass": score_pass,
             "issues": issues,

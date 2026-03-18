@@ -155,17 +155,19 @@ def display_single_result(result):
                 is_valid = log_entry.get("valid", None)
                 issues = log_entry.get("issues", [])
                 score_after = log_entry.get("score_after", "?")
-                score_pass = log_entry.get("score_pass", None)
+                struct_issues = log_entry.get("structural_issues", len(issues))
 
                 if is_valid is True:
-                    st.success(f"Attempt {attempt_num}: ✅ Passed — compliance score: {score_after}%")
+                    st.success(f"Attempt {attempt_num}: ✅ Passed — compliance: {score_after}%, 0 issues")
                 elif is_valid is False:
-                    label = f"Attempt {attempt_num}: ❌ Failed — score: {score_after}%, {len(issues)} issue(s) → agent self-corrected"
+                    label = f"Attempt {attempt_num}: ❌ Failed — compliance: {score_after}%, {struct_issues} issue(s)"
+                    if attempt_num < meta.get("attempts", 99):
+                        label += " → agent self-corrected"
                     with st.expander(label):
                         for issue in issues:
                             st.markdown(f"- {issue}")
                 else:
-                    st.warning(f"Attempt {attempt_num}: {log_entry.get('error', 'Unknown error')} → agent retried")
+                    st.warning(f"Attempt {attempt_num}: {log_entry.get('error', 'Parse error')} → agent retried")
 
             st.markdown("---")
             st.markdown("**Agent Decision Flow**")

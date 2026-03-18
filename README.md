@@ -41,9 +41,9 @@ flowchart LR
     end
 
     subgraph PROCESS["AGENTIC PROCESS"]
-        B["1. Tool Detection\n(LLM Call #1)"]
-        C["2. Hierarchy Generation\n(LLM Call #2)"]
-        D["3. Self-Validation\n(LLM Call #3)"]
+        B["1. Tool Detection\n(Regex — instant)"]
+        C["2. Hierarchy Generation\n(LLM Call — GPT-4o)"]
+        D["3. Code-Based Validation\n(9 checks — instant)"]
         E{"Score ≥ 90%?"}
         F["4. Self-Correction\n(up to 3 retries)"]
         B --> C --> D --> E
@@ -90,13 +90,13 @@ flowchart LR
 
 ## How It Is Agentic
 
-This is not a single LLM prompt-and-response. The agent demonstrates autonomous decision-making through a multi-step execution loop with self-validation and iterative correction:
+This is not a single LLM prompt-and-response. The agent uses a **hybrid architecture**: fast code-based checks for deterministic validation (tool detection via regex, structural validation via Python) combined with LLM for creative generation (hierarchy, scripts, READMEs). This gives the best of both worlds — speed + reliability for validation, creativity for generation.
 
 ```mermaid
 flowchart TD
-    A["📥 Inline YAML Input"] --> B["🔍 Step 1: Tool Detection\n(LLM Call #1)"]
-    B --> |"Mend SCA / SAST / Container\nSonarQube / Fortify / Unknown"| C["⚙️ Step 2: Hierarchy Generation\n(LLM Call #2)"]
-    C --> D["🔎 Step 3: Self-Validation\n(LLM Call #3)\n9 structural checks"]
+    A["📥 Inline YAML Input"] --> B["🔍 Step 1: Tool Detection\n(Regex-based — instant)"]
+    B --> |"Mend SCA / SAST / Container\nSonarQube / Fortify / Unknown"| C["⚙️ Step 2: Hierarchy Generation\n(LLM Call — GPT-4o)"]
+    C --> D["🔎 Step 3: Code-Based Validation\n9 structural checks (instant)"]
     D --> E{"Step 4: Score Check\nscore = 100 − (issues × 12)\n≥ 90%?"}
     E -- "✅ Pass\n0-1 issues" --> G["📤 Output Delivered\n+ Agent Trace"]
     E -- "❌ Fail" --> F["🔄 Step 5: Self-Correction\nFeed issues back\n+ fix instructions"]
@@ -139,9 +139,9 @@ flowchart TB
 
     subgraph AGENT["🧠 Agent Core (agent.py)"]
         direction TB
-        DT["detect_tool()\nLLM Call #1"]
-        AP["analyse_pipeline()\nLLM Call #2"]
-        VO["_validate_output()\nLLM Call #3"]
+        DT["detect_tool()\nRegex-based (instant)"]
+        AP["analyse_pipeline()\nLLM Call (GPT-4o)"]
+        VO["_validate_output()\nCode-based (instant)"]
         SC["Score Threshold\n≥ 90%"]
         RC["Self-Correction\n× 3 retries"]
         MF["analyse_multiple()\nMulti-file orchestrator"]
@@ -225,14 +225,14 @@ The brain of the system. Key components:
 - **`SYSTEM_PROMPT`** — ~250 lines encoding all 8 CoE governance rules, tool-specific parameter sets, script structure standards (Constants → Derived values → Logging helpers → Functions → Main), naming conventions, data masking rules, 9-section README format, and output JSON schema
 - **`VALIDATION_PROMPT`** — auditor prompt that checks generated output against 9 structural criteria
 - **`DETECTION_PROMPT`** — fast classifier for tool type (Mend SCA, SAST, Container, SonarQube, Fortify, Unknown)
-- **`detect_tool()`** — LLM call #1: autonomous tool classification
+- **`detect_tool()`** — regex-based tool classification (instant, no LLM call): matches keywords to identify Mend SCA, SAST, Container, SonarQube, Fortify, or Unknown
 - **`analyse_pipeline()`** — the main agentic loop:
-  1. Detect tool type
-  2. Generate compliant hierarchy
-  3. Self-validate (structural + 9-section checks)
-  4. Compute real compliance score from validator issues (`100 - issues × 12`)
+  1. Detect tool type (regex — instant)
+  2. Generate compliant hierarchy (LLM call — GPT-4o)
+  3. Validate output (code-based — 9 structural checks, instant)
+  4. Compute compliance score from issues (`100 - issues × 12`)
   5. If score < 90% or structural issues found → feed issues back → retry (up to 3×)
-- **`_validate_output()`** — LLM call #3: audits generated output, returns pass/fail + specific issues
+- **`_validate_output()`** — code-based validation (instant, no LLM call): checks compliant_yaml populated, all hierarchy levels present, bash steps in orchestrator, script structure, no sensitive data leaks, READMEs complete, no parameter cross-contamination, reduction calculation correct
 - **`analyse_multiple()`** — splits multi-file input by `---`, processes each with full agentic loop
 
 ### `app.py` — Streamlit UI
@@ -275,7 +275,7 @@ The presentation layer. Features:
 
 ## Agentic Validation Criteria
 
-The self-validation LLM call checks these 9 structural criteria:
+The validation is **code-based** (Python, not LLM) — this ensures deterministic, consistent, and instant checks with no LLM variance:
 
 1. `compliant_yaml` is populated and contains `resources: repositories`
 2. `template_files` contains stage, job, task, and script entries
@@ -358,11 +358,12 @@ AZURE_OPENAI_API_VERSION = "2024-12-01-preview"
 
 | Component | Cost |
 |---|---|
-| Azure OpenAI GPT-4o | ~$0.025 per single analysis (~$0.10 with validation retries) |
+| Azure OpenAI GPT-4o | ~$0.025 per attempt (1 LLM call per attempt) |
 | Streamlit Community Cloud | Free |
-| Multi-tool analysis (3 files) | ~$0.30 per run |
-| 200 test/demo calls | ~$10–20 |
-| **Total PoC budget** | **< $20 out of $100 student credits** |
+| Single analysis with retries | ~$0.05–0.10 (1–4 attempts) |
+| Multi-tool analysis (3 files) | ~$0.15–0.30 per run |
+| 200 test/demo calls | ~$5–15 |
+| **Total PoC budget** | **< $15 out of $100 student credits** |
 
 ---
 

@@ -251,46 +251,9 @@ CRITICAL:
 """.strip()
 
 # ---------------------------------------------------------------------------
-# Validation prompt — second LLM call to verify generated output
+# Tool detection + validation are now code-based (no LLM calls) for speed.
+# See detect_tool() and _validate_output() below.
 # ---------------------------------------------------------------------------
-VALIDATION_PROMPT = r"""
-You are a CI/CD governance auditor. You will receive a JSON object containing generated pipeline templates, scripts, and READMEs.
-
-Validate the output against these checks:
-1. compliant_yaml is NOT empty and contains `resources: repositories` block
-2. template_files contains stage, job, task, and script entries
-3. The orchestrator task (hierarchy_level=task) calls scripts via `- bash:` steps (NOT `- template:`)
-4. Scripts follow the structure: Constants → Derived values → Logging helpers → Functions → Main
-5. Scripts use `#!/bin/bash` and `set -euo pipefail`
-6. No sensitive identifiers leak (no real organisation names, internal product prefixes, real variable group names, or real credential variable names)
-7. readme_files has 3 entries (stage, job, task) each with non-empty content
-8. Parameters are tool-specific — no cross-contamination (e.g., no sonarQubeServiceConnection in Mend output)
-9. reduction_percentage matches: ((original_line_count - compliant_line_count) / original_line_count) * 100
-
-Respond ONLY with this JSON:
-{
-  "valid": true/false,
-  "issues": ["issue 1", "issue 2"],
-  "fix_instructions": "Concise instructions for what to fix (empty string if valid)"
-}
-""".strip()
-
-# ---------------------------------------------------------------------------
-# Tool detection prompt — classifies YAML before analysis
-# ---------------------------------------------------------------------------
-DETECTION_PROMPT = r"""
-You are a CI/CD tool classifier. Given inline Azure DevOps pipeline YAML, identify which security tool it implements.
-
-Respond ONLY with one of these exact strings:
-- "Mend SCA" (if you see: WhiteSource, wss-unified-agent, mend dep, Mend SCA, dependency scanning)
-- "Mend SAST" (if you see: mend sast, SAST scanning, static analysis via Mend)
-- "Container Scanning" (if you see: docker build, docker save, mend image, container scan, BuildKit)
-- "SonarQube" (if you see: SonarQubePrepare, SonarQubeAnalyze, SonarQubePublish, sonar)
-- "Fortify" (if you see: sourceanalyzer, fortifyclient, Fortify SCA, .fpr files)
-- "Unknown" (if none of the above match)
-
-Respond with ONLY the tool name string. Nothing else.
-""".strip()
 
 
 def _parse_json_response(raw: str) -> dict:
@@ -304,39 +267,104 @@ def _parse_json_response(raw: str) -> dict:
 
 
 def detect_tool(inline_yaml: str) -> str:
-    """Classify which security tool the inline YAML implements."""
-    client, deployment = _get_client()
-    response = client.chat.completions.create(
-        model=deployment,
-        messages=[
-            {"role": "system", "content": DETECTION_PROMPT},
-            {"role": "user", "content": inline_yaml},
-        ],
-        max_tokens=50,
-        temperature=0.0,
-    )
-    return response.choices[0].message.content.strip().strip('"')
+    """Classify which security tool the inline YAML implements (regex-based, no LLM)."""
+    yaml_lower = inline_yaml.lower()
+    if any(kw in yaml_lower for kw in ["sonarqubeprepare", "sonarqubeanalyze", "sonarqubepublish", "sonarqube", "sonar.exclusions"]):
+        return "SonarQube"
+    if any(kw in yaml_lower for kw in ["docker build", "docker save", "mend image", "container scan", "image.tar", "buildkit"]):
+        return "Container Scanning"
+    if any(kw in yaml_lower for kw in ["mend sast", "mend sast ", "--formats \"json,html\"", "sast scan"]):
+        return "Mend SAST"
+    if any(kw in yaml_lower for kw in ["whitesource", "wss-unified-agent", "mend dep", "mend sca", "unified-agent", "wss.url"]):
+        return "Mend SCA"
+    if any(kw in yaml_lower for kw in ["sourceanalyzer", "fortifyclient", "fortify", ".fpr"]):
+        return "Fortify"
+    return "Unknown"
 
 
 def _validate_output(result: dict) -> dict:
-    """Validate generated output using a second LLM call."""
-    client, deployment = _get_client()
-    response = client.chat.completions.create(
-        model=deployment,
-        messages=[
-            {"role": "system", "content": VALIDATION_PROMPT},
-            {"role": "user", "content": json.dumps(result, indent=2)},
-        ],
-        max_tokens=1024,
-        temperature=0.0,
-    )
-    try:
-        return _parse_json_response(response.choices[0].message.content)
-    except json.JSONDecodeError:
-        return {"valid": True, "issues": [], "fix_instructions": ""}
+    """Validate generated output using Python code checks (no LLM call)."""
+    issues = []
+
+    # Check 1: compliant_yaml populated
+    cy = result.get("compliant_yaml", "")
+    if not cy or len(cy.strip()) < 10:
+        issues.append("compliant_yaml is empty or too short")
+    elif "resources" not in cy.lower() and "repositories" not in cy.lower():
+        issues.append("compliant_yaml missing 'resources: repositories' block")
+
+    # Check 2: template_files present with all hierarchy levels
+    tfiles = result.get("template_files", [])
+    levels_found = {f.get("hierarchy_level") for f in tfiles}
+    for level in ["stage", "job", "task"]:
+        if level not in levels_found:
+            issues.append(f"template_files missing '{level}' hierarchy level")
+
+    # Check 3: orchestrator task uses bash steps
+    tasks = [f for f in tfiles if f.get("hierarchy_level") == "task"]
+    for t in tasks:
+        content = t.get("content", "")
+        if "- bash:" not in content and "bash:" not in content.lower():
+            if "SonarQube" not in result.get("tool_detected", ""):
+                issues.append(f"Orchestrator task '{t.get('filename', '?')}' missing '- bash:' steps")
+
+    # Check 4-5: scripts structure
+    scripts = [f for f in tfiles if f.get("hierarchy_level") == "script"]
+    for s in scripts:
+        content = s.get("content", "")
+        if "#!/bin/bash" not in content:
+            issues.append(f"Script '{s.get('filename', '?')}' missing #!/bin/bash shebang")
+        if "set -euo pipefail" not in content:
+            issues.append(f"Script '{s.get('filename', '?')}' missing 'set -euo pipefail'")
+
+    # Check 6: sensitive data leak check
+    full_output = json.dumps(result).lower()
+    leak_patterns = ["devopstoolscontroller", "devopsvariable", "whitesource-user-key",
+                     "whitesource-api-key", "whitesource-email", "wds-mend"]
+    for pattern in leak_patterns:
+        if pattern in full_output:
+            issues.append(f"Sensitive identifier leak detected: '{pattern}'")
+
+    # Check 7: readme_files present
+    rfiles = result.get("readme_files", [])
+    if len(rfiles) < 3:
+        issues.append(f"readme_files has {len(rfiles)} entries — need 3 (stage, job, task)")
+    for rf in rfiles:
+        if not rf.get("content", "").strip():
+            issues.append(f"README '{rf.get('filename', '?')}' has empty content")
+
+    # Check 8: parameter cross-contamination
+    tool = result.get("tool_detected", "").lower()
+    if "sonarqube" in tool:
+        for t in tfiles:
+            c = t.get("content", "").lower()
+            if "userkey" in c or "apikey" in c or "mendurl" in c:
+                issues.append("SonarQube output contains Mend-specific parameters (cross-contamination)")
+                break
+    elif "mend" in tool or "container" in tool:
+        for t in tfiles:
+            c = t.get("content", "").lower()
+            if "sonarqubeserviceconnection" in c:
+                issues.append("Mend/Container output contains SonarQube parameters (cross-contamination)")
+                break
+
+    # Check 9: reduction calculation
+    orig = result.get("original_line_count", 0)
+    comp = result.get("compliant_line_count", 0)
+    reported_reduction = result.get("reduction_percentage", 0)
+    if orig > 0 and comp > 0:
+        expected = round(((orig - comp) / orig) * 100, 2)
+        if abs(float(reported_reduction) - expected) > 5:
+            issues.append(f"reduction_percentage ({reported_reduction}%) doesn't match calculation ({expected}%)")
+
+    return {
+        "valid": len(issues) == 0,
+        "issues": issues,
+        "fix_instructions": "; ".join(issues) if issues else "",
+    }
 
 
-def analyse_pipeline(inline_yaml: str, max_retries: int = 3) -> dict:
+def analyse_pipeline(inline_yaml: str, max_retries: int = 2) -> dict:
     """
     Agentic analysis loop:
     1. Detect tool type

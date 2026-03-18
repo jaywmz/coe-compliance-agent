@@ -83,7 +83,7 @@ def display_single_result(result):
                 st.markdown(f"**Remediation:** {v.get('remediation','')}")
 
     with tab_c:
-        st.markdown("**Layer 1 - Consuming Pipeline** (paste into app repo)")
+        st.markdown("**Consuming Pipeline** (paste into app repo)")
         st.code(result.get("compliant_yaml", ""), language="yaml")
 
     with tab_h:
@@ -95,7 +95,7 @@ def display_single_result(result):
         st.markdown(f"**{len(tfiles)} files generated**")
 
         if stages:
-            st.markdown("<div class='section-head'><span class='h-stage'>STAGE</span> Layer 2</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-head'><span class='h-stage'>STAGE</span> Layer 4</div>", unsafe_allow_html=True)
             for f in stages:
                 with st.expander(f"📄 {f['filename']}"):
                     st.caption(f"{f.get('description','')} → calls `{f.get('calls','')}`")
@@ -109,14 +109,14 @@ def display_single_result(result):
                     st.code(f.get("content", ""), language="yaml")
         if tasks:
             st.markdown("<div class='h-connector'>↓ Job calls Task</div>", unsafe_allow_html=True)
-            st.markdown("<div class='section-head'><span class='h-task'>TASK</span> Layer 4</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-head'><span class='h-task'>TASK</span> Layer 2</div>", unsafe_allow_html=True)
             for f in tasks:
                 with st.expander(f"📄 {f['filename']}"):
                     st.caption(f"{f.get('description','')} → calls `{f.get('calls','')}`")
                     st.code(f.get("content", ""), language="yaml")
         if scripts:
             st.markdown("<div class='h-connector'>↓ Task calls Scripts via <code>- bash:</code></div>", unsafe_allow_html=True)
-            st.markdown("<div class='section-head'><span class='h-script'>SCRIPT</span> Layer 5</div>", unsafe_allow_html=True)
+            st.markdown("<div class='section-head'><span class='h-script'>SCRIPT</span> Layer 1</div>", unsafe_allow_html=True)
             for f in scripts:
                 with st.expander(f"📜 {f['filename']}"):
                     st.caption(f.get("description", ""))
@@ -208,7 +208,7 @@ with st.sidebar:
     multi_mode = st.toggle("Multi-file analysis", value=auto_multi, help="Paste multiple YAML blocks separated by '---'")
     st.markdown("---")
     st.markdown("##### Template Hierarchy")
-    st.code("L1  Consuming Pipeline\n └─ L2  Stage\n     └─ L3  Job\n         └─ L4  Orchestrator Task\n             └─ L5  Scripts (.sh)", language=None)
+    st.code("    Consuming Pipeline\n └─ L4  Stage\n     └─ L3  Job\n         └─ L2  Orchestrator Task\n             └─ L1  Scripts (.sh)", language=None)
 
 # ---- Examples ----
 EXAMPLES = {
